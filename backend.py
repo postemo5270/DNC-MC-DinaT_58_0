@@ -271,3 +271,6 @@ class Transformador:
             self.nivel_carga_pct = 0.0
             
         return self.capacidad_nema_kya
+
+# --- MEMORIA GLOBAL DEL PROYECTO ---
+SISTEMA_PROYECTO = Tablero("Tablero General", 480, 3)
