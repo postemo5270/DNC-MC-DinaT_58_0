@@ -3,44 +3,59 @@ from IPython.display import display, clear_output
 import backend  # Importamos el cerebro y la memoria compartida
 
 # =============================================================================
-# INTERFAZ DE INGRESO DE CARGAS (V2 - CON LIMPIEZA DE MEMORIA)
+# INTERFAZ DE INGRESO DE CARGAS (V3 - DISEÑO HORIZONTAL + LIMPIEZA)
 # =============================================================================
 
-# 1. Widgets de Datos Generales
-txt_proyecto = widgets.Text(description="Proyecto:", placeholder="Ej: Planta Procesadora")
-drop_voltaje = widgets.Dropdown(
-    options=[480, 440, 220, 208],
-    description="Voltaje (V):",
-    value=480
-)
+# --- ESTILOS ---
+# Definimos un ancho fijo para que se vean ordenados
+style_box = widgets.Layout(width='98%', display='flex', justify_content='space-between')
+style_input = widgets.Layout(width='auto', flex='1 1 auto') # Flexible
 
-# Botón con estilo de 'Advertencia' para indicar que reinicia cosas
-btn_iniciar = widgets.Button(description="NUEVO PROYECTO / RESET", button_style='warning', icon='eraser')
+# --- 1. SECCIÓN PROYECTO ---
+txt_proyecto = widgets.Text(description="Proyecto:", placeholder="Nombre del Proyecto", layout=style_input)
+drop_voltaje = widgets.Dropdown(options=[480, 440, 220, 208], description="Voltaje (V):", value=480, layout=widgets.Layout(width='200px'))
+btn_iniciar = widgets.Button(description="NUEVO PROYECTO / RESET", button_style='warning', icon='eraser', layout=widgets.Layout(width='250px'))
 out_mensaje_proyecto = widgets.Output()
 
-# 2. Widgets de Circuitos
-txt_tag = widgets.Text(description="TAG:", placeholder="M-01")
-txt_desc = widgets.Text(description="Desc:", placeholder="Bomba Agua")
-float_potencia = widgets.FloatText(description="Pot (kW):")
-drop_fases = widgets.Dropdown(options=[3, 2, 1], description="Fases:", value=3)
-float_fp = widgets.FloatText(description="F.P.:", value=0.9)
-float_long = widgets.FloatText(description="Long (m):", value=10)
-drop_calibre = widgets.Dropdown(options=backend.ORDEN_CALIBRES, description="Calibre:", value="12")
-drop_mat = widgets.Dropdown(options=["CU", "AL"], description="Mat:", value="CU")
+# Agrupamos en una fila horizontal
+ui_proyecto = widgets.HBox([txt_proyecto, drop_voltaje, btn_iniciar], layout=style_box)
+
+# --- 2. SECCIÓN AGREGAR CIRCUITOS ---
+# Fila A: Identificación y Potencia
+txt_tag = widgets.Text(description="TAG:", placeholder="M-01", layout=style_input)
+txt_desc = widgets.Text(description="Desc:", placeholder="Descripción", layout=style_input)
+float_potencia = widgets.FloatText(description="Pot (kW):", layout=style_input)
+
+fila_A = widgets.HBox([txt_tag, txt_desc, float_potencia], layout=style_box)
+
+# Fila B: Datos Técnicos Eléctricos
+drop_fases = widgets.Dropdown(options=[3, 2, 1], description="Fases:", value=3, layout=style_input)
+float_fp = widgets.FloatText(description="F.P.:", value=0.9, step=0.01, layout=style_input)
+float_long = widgets.FloatText(description="Long (m):", value=10, layout=style_input)
+
+fila_B = widgets.HBox([drop_fases, float_fp, float_long], layout=style_box)
+
+# Fila C: Selección de Cable y Botón Agregar
+drop_calibre = widgets.Dropdown(options=backend.ORDEN_CALIBRES, description="Calibre:", value="12", layout=style_input)
+drop_mat = widgets.Dropdown(options=["CU", "AL"], description="Mat:", value="CU", layout=widgets.Layout(width='150px'))
 drop_inst = widgets.Dropdown(
     options=[("Ducto", backend.TipoInstalacion.DUCTO), 
              ("Aire", backend.TipoInstalacion.AIRE), 
              ("Agrupado", backend.TipoInstalacion.AGRUP)],
     description="Instal:",
-    value=backend.TipoInstalacion.DUCTO
+    value=backend.TipoInstalacion.DUCTO,
+    layout=style_input
 )
+btn_agregar = widgets.Button(description="AGREGAR", button_style='success', icon='plus', layout=widgets.Layout(width='150px'))
 
-btn_agregar = widgets.Button(description="AGREGAR CIRCUITO", button_style='success', icon='plus')
+fila_C = widgets.HBox([drop_calibre, drop_mat, drop_inst, btn_agregar], layout=style_box)
+
 out_tabla = widgets.Output()
+
+# --- LÓGICA (HANDLERS) ---
 
 def al_clic_iniciar(b):
     # 1. LIMPIEZA DE MEMORIA (RESET)
-    # Vaciamos la lista de circuitos y subtableros para empezar de cero
     backend.SISTEMA_PROYECTO.circuitos = []
     backend.SISTEMA_PROYECTO.sub_tableros = []
     
@@ -50,15 +65,15 @@ def al_clic_iniciar(b):
     
     with out_mensaje_proyecto:
         clear_output()
-        print(f"🗑️ Memoria limpiada.")
-        print(f"✅ PROYECTO '{txt_proyecto.value}' INICIADO ({drop_voltaje.value}V).")
-        print("   La base de datos está vacía y lista para nuevos circuitos. 👇")
+        print(f"🗑️ Memoria borrada. Nuevo proyecto '{txt_proyecto.value}' ({drop_voltaje.value}V) iniciado.")
         
-    # Limpiamos también la tabla visual de abajo para que no confunda
     with out_tabla:
         clear_output()
 
 def al_clic_agregar(b):
+    # Validar campos básicos
+    if float_potencia.value <= 0: return
+
     # 1. Crear el objeto Circuito
     nuevo_c = backend.Circuito(
         tag=txt_tag.value,
@@ -77,23 +92,24 @@ def al_clic_agregar(b):
     # 2. GUARDAR EN LA MEMORIA GLOBAL
     backend.SISTEMA_PROYECTO.agregar_c(nuevo_c)
     
-    # 3. Feedback visual
+    # 3. Feedback visual (Lista acumulativa)
     res = nuevo_c.ejecutar_seleccion_conductor()
     
     with out_tabla:
-        # No usamos clear_output aquí para que se vaya haciendo una lista acumulativa visual
-        print(f"➕ {nuevo_c.tag} | {nuevo_c.descripcion} -> {res['N']}x{res['Calibre']} {res['Mat']}")
+        print(f"✅ {nuevo_c.tag.ljust(6)} | {nuevo_c.descripcion.ljust(15)} | {res['N']}x{res['Calibre']} {res['Mat']} (Reg: {round(res['DV'],2)}%)")
 
 # Conectar botones
 btn_iniciar.on_click(al_clic_iniciar)
 btn_agregar.on_click(al_clic_agregar)
 
 def iniciar_interfaz():
-    display(widgets.HTML("<h2>🏗️ GESTIÓN DE PROYECTO Y CARGAS</h2>"))
-    display(widgets.HTML("<i>Nota: Al hacer clic en 'Nuevo Proyecto', se borran los datos anteriores.</i>"))
-    display(txt_proyecto, drop_voltaje, btn_iniciar, out_mensaje_proyecto)
+    # Títulos y Estructura Visual
+    display(widgets.HTML("<h3>🏗️ GESTIÓN DE PROYECTO</h3>"))
+    display(ui_proyecto)
+    display(out_mensaje_proyecto)
     
-    display(widgets.HTML("<hr><h3>🔌 AGREGAR CARGAS</h3>"))
-    display(txt_tag, txt_desc, float_potencia, drop_fases, float_fp, float_long)
-    display(drop_calibre, drop_mat, drop_inst, btn_agregar)
+    display(widgets.HTML("<hr><h3>🔌 DETALLE DE CARGAS</h3>"))
+    display(widgets.VBox([fila_A, fila_B, fila_C]))
+    
+    display(widgets.HTML("<hr><b>Historial de Agregados:</b>"))
     display(out_tabla)
