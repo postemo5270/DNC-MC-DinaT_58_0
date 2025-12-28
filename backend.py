@@ -4,7 +4,7 @@ from enum import Enum
 from typing import List, Dict, Optional
 
 # =============================================================================
-# MODULO BACKEND: BASE DE DATOS Y LÓGICA DE NEGOCIO
+# MODULO BACKEND: BASE DE DATOS Y LÓGICA DE NEGOCIO (V3 - COMPLETO)
 # =============================================================================
 
 ORDEN_CALIBRES = [
@@ -80,6 +80,9 @@ class Circuito:
     
     MAX_CAIDA: float = 3.0
     _res_conductor: dict = field(default_factory=dict)
+    
+    # Cache de resultados de carga
+    _kva_nominal: float = 0.0
 
     def _get_bd(self):
         return BD_CABLES_AL if self.material_conductor == "AL" else BD_CABLES_CU
@@ -91,13 +94,14 @@ class Circuito:
         if self.tiene_sut: p_extra += 0.01
         kw_carga = pot_op * (1 + p_extra)
         fp = self.factor_potencia if self.factor_potencia > 0 else 0.9
-        kva = kw_carga / fp
+        
+        self._kva_nominal = kw_carga / fp
         
         if self.voltaje > 0:
             denom = (math.sqrt(3) * self.voltaje) if self.fases == 3 else self.voltaje
-            i_nom = (kva * 1000) / denom
+            i_nom = (self._kva_nominal * 1000) / denom
         else: i_nom = 0.0
-        return i_nom, kw_carga, kva
+        return i_nom, kw_carga, self._kva_nominal
 
     def _get_ampacidad_real(self, datos_cable):
         if self.tipo_instalacion == TipoInstalacion.DUCTO: return datos_cable["A_DUCTO"]
@@ -110,6 +114,7 @@ class Circuito:
         i_req = i_nom * 1.25
         bd = self._get_bd()
         
+        # 1. Optimización (Buscar el menor que cumpla con 1 conductor)
         cal_opt = "750"
         for c in ORDEN_CALIBRES:
             dat = bd.get(c)
@@ -121,15 +126,18 @@ class Circuito:
                     cal_opt = c
                     break
         
+        # 2. Decisión contra Usuario
         u_idx = ORDEN_CALIBRES.index(self.calibre_usuario) if self.calibre_usuario in ORDEN_CALIBRES else -1
         o_idx = ORDEN_CALIBRES.index(cal_opt)
         
         sel_cal = self.calibre_usuario
         nota = "Usuario"
+        # Si el usuario eligió uno MUY grande (idx > opt), optimizamos
         if u_idx > o_idx: 
             sel_cal = cal_opt
             nota = "Optimizado"
         
+        # 3. Cálculo Final (N paralelos)
         dat_sel = bd.get(sel_cal)
         n = 1
         while n <= 10:
@@ -141,7 +149,7 @@ class Circuito:
         cap_real = self._get_ampacidad_real(dat_sel) * n
         dv_real = self._calc_dv(n, dat_sel["R"], dat_sel["X"], i_nom)
         
-        # Evidencia
+        # 4. Evidencia (El inmediatamente anterior o menor)
         prev_n = n
         prev_cal = sel_cal
         if n > 1: prev_n = n - 1 
@@ -175,13 +183,6 @@ class Circuito:
         }
         return self._res_conductor
 
-    def calcular_perdidas_reales(self):
-        if not self._res_conductor: self.ejecutar_seleccion_conductor()
-        rc = self._res_conductor
-        r_total = (rc["R_unit"] * (self.longitud_mts / 1000.0)) / rc["N"]
-        factor_fase = 3 if self.fases == 3 else 2
-        return (factor_fase * (rc["I_Nom"]**2) * r_total) / 1000.0
-
     def _calc_dv(self, n, r, x, i):
         k = math.sqrt(3) if self.fases == 3 else 2
         z = r * self.factor_potencia + x * math.sin(math.acos(self.factor_potencia))
@@ -196,11 +197,77 @@ class Tablero:
         self.fd = fd
         self.circuitos = []
         self.sub_tableros = []
+        
+        # Resultados de Cálculo
+        self.kva_instalado = 0.0
+        self.kva_demandado = 0.0
+        self.kw_instalado = 0.0
+    
     def agregar_c(self, c): self.circuitos.append(c)
     def agregar_s(self, t): self.sub_tableros.append(t)
+    
+    def calcular_cargas_tablero(self):
+        """Suma circuitos, hijos y aplica diversidad"""
+        sum_kva = 0.0
+        sum_kw = 0.0
+        
+        # 1. Sumar Circuitos Propios
+        for c in self.circuitos:
+            c.ejecutar_seleccion_conductor() # Asegurar que esté calculado
+            _, kw_c, kva_c = c.calcular_corriente_carga()
+            sum_kva += kva_c
+            sum_kw += kw_c
+            
+        # 2. Sumar Sub-Tableros (Recursividad)
+        for sub in self.sub_tableros:
+            sub.calcular_cargas_tablero() # Primero calculamos al hijo
+            sum_kva += sub.kva_demandado # Sumamos su demanda (ya diversificada)
+            sum_kw += sub.kva_demandado * 0.9 # Estimamos kW del hijo (o podríamos sumar kW real)
+            
+        self.kva_instalado = sum_kva
+        self.kw_instalado = sum_kw
+        self.kva_demandado = self.kva_instalado * self.fd
+        
+        return self.kva_demandado
 
 class Transformador:
     def __init__(self, nombre, reserva=0.0):
         self.nombre = nombre
         self.reserva = reserva
         self.tableros = []
+        
+        # Resultados
+        self.kva_total_demandado = 0.0
+        self.capacidad_nema_kya = 0.0
+        self.nivel_carga_pct = 0.0
+        self.seleccion_txt = ""
+
+    def ejecutar_calculo_transformador(self):
+        # 1. Sumar todos los tableros principales
+        total_d = 0.0
+        for t in self.tableros:
+            total_d += t.calcular_cargas_tablero()
+        
+        self.kva_total_demandado = total_d * (1 + self.reserva)
+        
+        # 2. Seleccionar NEMA
+        sel = None
+        for cap in TRANSFORMADORES_NEMA:
+            if cap >= self.kva_total_demandado:
+                sel = cap
+                break
+        
+        if sel is None:
+            sel = TRANSFORMADORES_NEMA[-1]
+            self.seleccion_txt = f"⚠️ EXCEPCIONAL: > {sel} kVA"
+        else:
+            self.seleccion_txt = f"TRANSFORMADOR {sel} kVA"
+            
+        self.capacidad_nema_kya = sel
+        
+        if sel > 0:
+            self.nivel_carga_pct = (self.kva_total_demandado / sel) * 100
+        else:
+            self.nivel_carga_pct = 0.0
+            
+        return self.capacidad_nema_kya
