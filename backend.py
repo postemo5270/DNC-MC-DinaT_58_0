@@ -4,7 +4,7 @@ from enum import Enum
 from typing import List, Dict, Optional
 
 # =============================================================================
-# MODULO BACKEND: BASE DE DATOS Y LÓGICA DE NEGOCIO (V-TRAFO)
+# MODULO BACKEND: BASE DE DATOS Y LÓGICA DE NEGOCIO
 # =============================================================================
 
 ORDEN_CALIBRES = [
@@ -13,14 +13,13 @@ ORDEN_CALIBRES = [
 ]
 
 # --- TABLAS DOE 2016 (Eficiencia mínima al 50% de carga) ---
-# Fuente: 10 CFR 431.192 / 431.196
 DOE_2016_LIQUID_3PH = {
     15: 98.65, 30: 98.93, 45: 99.03, 75: 99.19, 112.5: 99.25,
     150: 99.28, 225: 99.33, 300: 99.36, 500: 99.42, 750: 99.46,
     1000: 99.49, 1500: 99.52, 2000: 99.55, 2500: 99.57
 }
 
-DOE_2016_DRY_MV_3PH = { # Seco Media Tensión (BIL habitual)
+DOE_2016_DRY_MV_3PH = { 
     15: 97.50, 30: 97.90, 45: 98.10, 75: 98.33, 112.5: 98.52,
     150: 98.65, 225: 98.75, 300: 98.83, 500: 98.94, 750: 99.03,
     1000: 99.08, 1500: 99.14, 2000: 99.18, 2500: 99.22
@@ -28,7 +27,7 @@ DOE_2016_DRY_MV_3PH = { # Seco Media Tensión (BIL habitual)
 
 KVA_ESTANDAR = sorted(list(DOE_2016_LIQUID_3PH.keys()))
 
-# --- BASE DE DATOS CONDUCTORES (Matriz Ducto/Aire/Agrupado) ---
+# --- BASE DE DATOS CONDUCTORES ---
 BD_CABLES_CU = {
     "12":  {"A_DUCTO": 30,  "A_AIRE": 40,   "A_AGRUP": 33,  "R": 6.6,   "X": 0.177},
     "10":  {"A_DUCTO": 40,  "A_AIRE": 55,   "A_AGRUP": 45,  "R": 3.9,   "X": 0.164},
@@ -179,7 +178,7 @@ class Circuito:
         return (v_drop / self.voltaje) * 100
 
 # =============================================================================
-# CLASE TRANSFORMADOR (NUEVA)
+# CLASE TRANSFORMADOR
 # =============================================================================
 @dataclass
 class Transformador:
@@ -215,11 +214,7 @@ class Transformador:
                 break
                 
         # 3. Eficiencia DOE
-        # Determinamos tabla según tipo
         tabla_eff = DOE_2016_DRY_MV_3PH if self.tipo == "SECO" else DOE_2016_LIQUID_3PH
-        
-        # Interpolación simple o búsqueda directa (usamos directa para valores estándar)
-        # Si es un valor no estándar (ej. custom), usamos el más cercano inferior
         eff_keys = sorted(tabla_eff.keys())
         closest_k = eff_keys[0]
         for k in eff_keys:
@@ -233,22 +228,17 @@ class Transformador:
             self.cargabilidad = (self.kva_carga / self.kva_comercial) * 100
         
         # 5. Factor de Potencia y Pérdidas
-        # Estimación: Ploss = Pout * (1-eff)/eff
-        # Asumimos que la eficiencia DOE es al 50%. A plena carga las pérdidas suben (cuadrático).
-        # Modelo simplificado: Pérdidas Totales Estimadas = kW_Carga * (1 - Eff/100)
-        
         eff_decimal = self.eficiencia_doe / 100.0
-        perdidas_kw = kw_load * (1 - eff_decimal) # Estimado en operación
-        
+        perdidas_kw = kw_load * (1 - eff_decimal) 
         potencia_entrada_kw = kw_load + perdidas_kw
         potencia_entrada_kva = math.sqrt(potencia_entrada_kw**2 + (kva_load * math.sin(math.acos(kw_load/kva_load)))**2) if kva_load > 0 else 0
         
         if potencia_entrada_kva > 0:
             self.fp_entrada = potencia_entrada_kw / potencia_entrada_kva
         else:
-            self.fp_entrada = 0.9 # Default
+            self.fp_entrada = 0.9
             
-        # 6. Corrientes de Barraje (A capacidad nominal del Trafo)
+        # 6. Corrientes de Barraje
         self.i_pri_nom = (self.kva_comercial * 1000) / (math.sqrt(3) * self.voltaje_pri)
         self.i_sec_nom = (self.kva_comercial * 1000) / (math.sqrt(3) * self.voltaje_sec)
         
@@ -282,7 +272,6 @@ class Tablero:
             _, kw, kva = c.calcular_corriente_carga()
             tot_kw += kw
             tot_kva += kva
-        
         self.kw_demandado = tot_kw
         self.kva_demandado = tot_kva
         return tot_kva, tot_kw
@@ -290,26 +279,14 @@ class Tablero:
 # --- MEMORIA GLOBAL ---
 SISTEMA_PROYECTO = Tablero("Tablero General", 480, 3)
 
-
-
-
 # =============================================================================
 # UTILIDADES DE DESARROLLO (DATOS DE PRUEBA)
 # =============================================================================
 def cargar_datos_demo():
-    """
-    Carga un proyecto ficticio con cargas variadas para pruebas rápidas
-    sin necesidad de usar el Wizard manual.
-    """
     global SISTEMA_PROYECTO
     print("... Generando datos de prueba ...")
-    
-    # 1. Crear Tablero
     tbt = Tablero("TBT-DEMO-FACTORY", 480, 3)
-    
-    # 2. Lista de cargas ficticias variadas
     cargas_demo = [
-        # (Tag, Desc, kW, Fases, Long, CalibreUser, Mat, TipoInst)
         ("M-01", "Bomba Agua Cruda", 45.0, 3, 120, "12", "CU", TipoInstalacion.BANDEJA),
         ("M-02", "Compresor Principal", 75.0, 3, 40, "4", "AL", TipoInstalacion.DUCTO),
         ("ILUM-01", "Iluminación Nave A", 12.5, 2, 200, "10", "CU", TipoInstalacion.AIRE),
@@ -317,8 +294,6 @@ def cargar_datos_demo():
         ("PC-OFF", "Tomas Oficina", 5.0, 1, 60, "12", "CU", TipoInstalacion.DUCTO),
         ("CHILLER", "Sistema Enfriamiento", 200.0, 3, 80, "250", "AL", TipoInstalacion.BANCO_DUCTOS),
     ]
-    
-    # 3. Insertar y Calcular
     for datos in cargas_demo:
         c = Circuito(
             tag=datos[0], descripcion=datos[1], potencia_nominal_kw=datos[2],
@@ -327,13 +302,8 @@ def cargar_datos_demo():
             calibre_usuario=datos[5], material_conductor=datos[6],
             tipo_instalacion=datos[7]
         )
-        # Flags especiales para simular casos reales
         if "Variador" in c.descripcion: c.tiene_vfd = True
-        
         tbt.agregar_c(c)
-        c.ejecutar_seleccion_conductor() # Ejecuta el cálculo matemático
-        
-    # 4. Asignar al sistema global
+        c.ejecutar_seleccion_conductor()
     SISTEMA_PROYECTO = tbt
     print(f"✅ ¡Datos cargados! {len(tbt.circuitos)} circuitos listos en '{tbt.nombre}'.")
-    print("👉 Ahora puedes ejecutar directamente ModConds o ModTrafo.")
