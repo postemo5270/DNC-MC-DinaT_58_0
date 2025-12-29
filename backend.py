@@ -289,3 +289,51 @@ class Tablero:
 
 # --- MEMORIA GLOBAL ---
 SISTEMA_PROYECTO = Tablero("Tablero General", 480, 3)
+
+
+
+
+# =============================================================================
+# UTILIDADES DE DESARROLLO (DATOS DE PRUEBA)
+# =============================================================================
+def cargar_datos_demo():
+    """
+    Carga un proyecto ficticio con cargas variadas para pruebas rápidas
+    sin necesidad de usar el Wizard manual.
+    """
+    global SISTEMA_PROYECTO
+    print("... Generando datos de prueba ...")
+    
+    # 1. Crear Tablero
+    tbt = Tablero("TBT-DEMO-FACTORY", 480, 3)
+    
+    # 2. Lista de cargas ficticias variadas
+    cargas_demo = [
+        # (Tag, Desc, kW, Fases, Long, CalibreUser, Mat, TipoInst)
+        ("M-01", "Bomba Agua Cruda", 45.0, 3, 120, "12", "CU", TipoInstalacion.BANDEJA),
+        ("M-02", "Compresor Principal", 75.0, 3, 40, "4", "AL", TipoInstalacion.DUCTO),
+        ("ILUM-01", "Iluminación Nave A", 12.5, 2, 200, "10", "CU", TipoInstalacion.AIRE),
+        ("VFD-01", "Extrusora (Con Variador)", 110.0, 3, 15, "1/0", "CU", TipoInstalacion.BANDEJA),
+        ("PC-OFF", "Tomas Oficina", 5.0, 1, 60, "12", "CU", TipoInstalacion.DUCTO),
+        ("CHILLER", "Sistema Enfriamiento", 200.0, 3, 80, "250", "AL", TipoInstalacion.BANCO_DUCTOS),
+    ]
+    
+    # 3. Insertar y Calcular
+    for datos in cargas_demo:
+        c = Circuito(
+            tag=datos[0], descripcion=datos[1], potencia_nominal_kw=datos[2],
+            voltaje=tbt.voltaje, fases=datos[3], factor_potencia=0.9,
+            tipo_operacion=TipoOperacion.CONTINUA, longitud_mts=datos[4],
+            calibre_usuario=datos[5], material_conductor=datos[6],
+            tipo_instalacion=datos[7]
+        )
+        # Flags especiales para simular casos reales
+        if "Variador" in c.descripcion: c.tiene_vfd = True
+        
+        tbt.agregar_c(c)
+        c.ejecutar_seleccion_conductor() # Ejecuta el cálculo matemático
+        
+    # 4. Asignar al sistema global
+    SISTEMA_PROYECTO = tbt
+    print(f"✅ ¡Datos cargados! {len(tbt.circuitos)} circuitos listos en '{tbt.nombre}'.")
+    print("👉 Ahora puedes ejecutar directamente ModConds o ModTrafo.")
