@@ -3,163 +3,210 @@ from IPython.display import display, clear_output
 import backend
 
 # =============================================================================
-# INTERFAZ DE INGRESO DE CARGAS (V4 - MULTI-VOLTAJE Y SUB-TABLEROS)
+# INTERFAZ DE INGRESO DE CARGAS (V5 - FLUJO SECUENCIAL / WIZARD)
 # =============================================================================
 
-# --- ESTILOS VISUALES (HORIZONTAL) ---
-layout_box = widgets.Layout(width='98%', display='flex', justify_content='flex-start', margin='5px 0px')
-layout_input = widgets.Layout(width='auto', flex='1 1 auto', margin='0px 5px')
-layout_small = widgets.Layout(width='120px', margin='0px 5px')
+# --- VARIABLES DE ESTADO (MEMORIA TEMPORAL DE LA SESIÓN) ---
+sesion_actual = {
+    "proyecto": "",
+    "tbt_actual": None,  # Objeto Tablero actual
+    "tipo_tbt_actual": "PRINCIPAL" # PRINCIPAL o SUBORDINADO
+}
+
+# --- WIDGETS COMUNES (REUTILIZABLES) ---
+estilo_btn = widgets.Layout(width='200px', margin='5px')
+estilo_input = widgets.Layout(width='auto', flex='1 1 auto')
+
+out_main = widgets.Output() # Aquí se renderizará cada "Pantalla"
 
 # =============================================================================
-# SECCIÓN A: CONFIGURACIÓN DEL PROYECTO Y TABLERO PRINCIPAL
+# PANTALLA 1: INICIO PROYECTO
 # =============================================================================
-txt_proyecto = widgets.Text(description="Proyecto:", placeholder="Nombre del Proyecto", layout=layout_input)
-# El voltaje aquí es para el Tablero Principal (Padre de todos)
-drop_voltaje_main = widgets.Dropdown(options=[480, 440, 220, 208], description="Voltaje TBT:", value=480, layout=layout_small)
-btn_reset = widgets.Button(description="NUEVO / RESET", button_style='warning', icon='eraser', layout=widgets.Layout(width='150px'))
-out_msg = widgets.Output()
+txt_proy_nombre = widgets.Text(description="Proyecto:", placeholder="Nombre del Proyecto", layout=estilo_input)
+btn_proy_iniciar = widgets.Button(description="INICIAR PROYECTO", button_style='primary', layout=estilo_btn)
 
-ui_proyecto = widgets.HBox([txt_proyecto, drop_voltaje_main, btn_reset], layout=layout_box)
-
-# =============================================================================
-# SECCIÓN B: AGREGAR ELEMENTOS (CARGAS O SUB-TABLEROS)
-# =============================================================================
-# Selector de TIPO DE ELEMENTO
-tog_tipo = widgets.ToggleButtons(
-    options=['CARGA FINAL', 'SUB-TABLERO'],
-    description='Tipo:',
-    disabled=False,
-    button_style='info',
-    tooltips=['Motor, Iluminación, Toma', 'Alimentador hacia otro tablero aguas abajo']
-)
-
-# --- CAMPOS (FILA 1) ---
-txt_tag = widgets.Text(description="TAG:", placeholder="M-01 o TBT-02", layout=layout_input)
-txt_desc = widgets.Text(description="Desc:", placeholder="Bomba / Tablero Secundario", layout=layout_input)
-# Potencia: Si es carga final es kW, si es Sub-Tablero es kW estimados o instalados
-float_potencia = widgets.FloatText(description="Pot (kW):", layout=layout_small)
-
-fila_1 = widgets.HBox([txt_tag, txt_desc, float_potencia], layout=layout_box)
-
-# --- CAMPOS (FILA 2) ---
-# Fases y FP aplican para ambos
-drop_fases = widgets.Dropdown(options=[3, 2, 1], description="Fases:", value=3, layout=layout_small)
-float_fp = widgets.FloatText(description="F.P.:", value=0.9, step=0.01, layout=layout_small)
-float_long = widgets.FloatText(description="Long (m):", value=10, layout=layout_small)
-
-# Este dropdown de voltaje SOLO es visible si elegimos SUB-TABLERO (Para saber a qué voltaje opera el hijo)
-drop_voltaje_sub = widgets.Dropdown(
-    options=[480, 440, 220, 208], 
-    description="Volt (Sec):", 
-    value=220, 
-    layout=layout_small,
-    disabled=True # Inicia desactivado pq por defecto es Carga Final
-)
-
-fila_2 = widgets.HBox([drop_fases, float_fp, float_long, drop_voltaje_sub], layout=layout_box)
-
-# --- CAMPOS (FILA 3 - CONDUCTORES) ---
-drop_calibre = widgets.Dropdown(options=backend.ORDEN_CALIBRES, description="Calibre:", value="12", layout=layout_small)
-drop_mat = widgets.Dropdown(options=["CU", "AL"], description="Mat:", value="CU", layout=widgets.Layout(width='100px'))
-drop_inst = widgets.Dropdown(
-    options=[("Ducto", backend.TipoInstalacion.DUCTO), ("Aire", backend.TipoInstalacion.AIRE)],
-    description="Instal:", value=backend.TipoInstalacion.DUCTO, layout=layout_input
-)
-btn_add = widgets.Button(description="AGREGAR", button_style='success', icon='plus', layout=widgets.Layout(width='120px'))
-
-fila_3 = widgets.HBox([drop_calibre, drop_mat, drop_inst, btn_add], layout=layout_box)
-
-out_tabla = widgets.Output()
-
-# =============================================================================
-# LÓGICA
-# =============================================================================
-
-def on_tipo_change(change):
-    # Si cambiamos a Sub-Tablero, habilitamos el selector de voltaje secundario
-    if change['new'] == 'SUB-TABLERO':
-        drop_voltaje_sub.disabled = False
-        float_potencia.description = "Est. (kW):" # Potencia estimada del tablero hijo
-    else:
-        drop_voltaje_sub.disabled = True
-        float_potencia.description = "Pot (kW):"
-
-tog_tipo.observe(on_tipo_change, names='value')
-
-def al_clic_reset(b):
-    # 1. Limpiar Backend
-    backend.SISTEMA_PROYECTO = backend.Tablero(txt_proyecto.value, drop_voltaje_main.value, 3)
-    
-    with out_msg:
+def mostrar_inicio():
+    with out_main:
         clear_output()
-        print(f"🗑️ PROYECTO NUEVO: {txt_proyecto.value} | Tensión Principal: {drop_voltaje_main.value}V")
-    with out_tabla:
-        clear_output()
+        display(widgets.HTML("<h3>1️⃣ CONFIGURACIÓN DE PROYECTO</h3>"))
+        display(widgets.HBox([txt_proy_nombre, btn_proy_iniciar]))
 
-def al_clic_agregar(b):
-    if float_potencia.value <= 0: return
-
-    # Recopilamos datos comunes
-    tag = txt_tag.value
-    desc = txt_desc.value
-    kw = float_potencia.value
-    vol_prin = backend.SISTEMA_PROYECTO.voltaje # El voltaje del cable siempre es el del padre
-    fases = drop_fases.value
-    fp = float_fp.value
-    l = float_long.value
+def on_click_iniciar_proy(b):
+    if not txt_proy_nombre.value: return
+    # Reset del Backend
+    backend.SISTEMA_PROYECTO.circuitos = []
+    backend.SISTEMA_PROYECTO.sub_tableros = []
+    backend.SISTEMA_PROYECTO.nombre = txt_proy_nombre.value
     
-    # Lógica según tipo
-    if tog_tipo.value == 'CARGA FINAL':
-        # Creamos Carga
-        nuevo_item = backend.Circuito(
-            tag=tag, descripcion=desc, potencia_nominal_kw=kw,
-            voltaje=vol_prin, fases=fases, factor_potencia=fp,
-            tipo_operacion=backend.TipoOperacion.CONTINUA, longitud_mts=l,
-            calibre_usuario=drop_calibre.value, material_conductor=drop_mat.value,
-            tipo_instalacion=drop_inst.value
-        )
-        backend.SISTEMA_PROYECTO.agregar_c(nuevo_item)
-        res = nuevo_item.ejecutar_seleccion_conductor()
-        tipo_txt = "💡 CARGA"
-        
-    else: # SUB-TABLERO
-        # 1. Creamos el objeto Tablero hijo
-        vol_hijo = drop_voltaje_sub.value
-        nuevo_tablero = backend.Tablero(tag, vol_hijo, fases)
-        nuevo_tablero.kva_demandado = kw / fp # Estimacion inicial para calcular el cable alimentador
-        
-        # 2. Creamos el circuito ALIMENTADOR para ese tablero
-        # El alimentador "vive" en el tablero principal, pero alimenta al hijo
-        nuevo_item = backend.Circuito(
-            tag=f"ALIM-{tag}", descripcion=f"Alim. a {desc}", potencia_nominal_kw=kw,
-            voltaje=vol_prin, fases=fases, factor_potencia=fp,
-            tipo_operacion=backend.TipoOperacion.CONTINUA, longitud_mts=l,
-            calibre_usuario=drop_calibre.value, material_conductor=drop_mat.value,
-            tipo_instalacion=drop_inst.value
-        )
-        # Marcamos que es un alimentador (usuario debe saberlo, o lo forzamos)
-        
-        backend.SISTEMA_PROYECTO.agregar_c(nuevo_item) # Agregamos el cable
-        backend.SISTEMA_PROYECTO.agregar_s(nuevo_tablero) # Agregamos la lógica del tablero hijo
-        
-        res = nuevo_item.ejecutar_seleccion_conductor()
-        tipo_txt = f"⚡ SUB-TBT ({vol_hijo}V)"
+    sesion_actual["proyecto"] = txt_proy_nombre.value
+    # Pasamos a crear el primer TBT Principal
+    mostrar_crear_tbt(tipo="PRINCIPAL")
 
-    with out_tabla:
-        print(f"➕ {tipo_txt} | {tag} | {desc} -> {res['N']}x{res['Calibre']} {res['Mat']} (DV: {round(res['DV'],2)}%)")
+btn_proy_iniciar.on_click(on_click_iniciar_proy)
 
-btn_reset.on_click(al_clic_reset)
-btn_add.on_click(al_clic_agregar)
+# =============================================================================
+# PANTALLA 2: CREAR TABLERO (TBT)
+# =============================================================================
+txt_tbt_nombre = widgets.Text(description="Nombre TBT:", placeholder="Ej: TBT-Principal", layout=estilo_input)
+drop_tbt_volt = widgets.Dropdown(options=[480, 440, 220, 208], description="Tensión (V):", value=480, layout=widgets.Layout(width='150px'))
+btn_crear_tbt = widgets.Button(description="CREAR TBT E IR A CARGAS", button_style='success', layout=widgets.Layout(width='250px'))
 
+def mostrar_crear_tbt(tipo="PRINCIPAL"):
+    # Limpiamos inputs previos
+    txt_tbt_nombre.value = ""
+    sesion_actual["tipo_tbt_actual"] = tipo
+    
+    titulo = "2️⃣ CREAR TABLERO PRINCIPAL" if tipo == "PRINCIPAL" else "4️⃣ CREAR TABLERO SUBORDINADO (AGUAS ABAJO)"
+    estilo_titulo = "color: darkblue;" if tipo == "PRINCIPAL" else "color: darkred;"
+    
+    with out_main:
+        clear_output()
+        display(widgets.HTML(f"<h3 style='{estilo_titulo}'>{titulo}</h3>"))
+        if tipo == "SUBORDINADO":
+            display(widgets.HTML(f"<i>Dependerá de: {sesion_actual['tbt_actual'].nombre if sesion_actual['tbt_actual'] else 'N/A'}</i>"))
+            
+        display(widgets.HBox([txt_tbt_nombre, drop_tbt_volt]))
+        display(btn_crear_tbt)
+
+def on_click_crear_tbt(b):
+    if not txt_tbt_nombre.value: return
+    
+    # Creamos objeto Tablero (aunque el backend actual centraliza todo, simulamos la estructura)
+    nuevo_tbt = backend.Tablero(txt_tbt_nombre.value, drop_tbt_volt.value, 3)
+    sesion_actual["tbt_actual"] = nuevo_tbt
+    
+    # Nota: En esta versión simplificada, guardamos las cargas en la lista global
+    # pero les pondremos un prefijo o nota para saber de qué TBT son.
+    
+    mostrar_ingreso_cargas()
+
+btn_crear_tbt.on_click(on_click_crear_tbt)
+
+# =============================================================================
+# PANTALLA 3: INGRESO DE CARGAS (BUCLE)
+# =============================================================================
+# Widgets de Carga
+txt_c_tag = widgets.Text(description="TAG:", layout=widgets.Layout(width='120px'))
+txt_c_desc = widgets.Text(description="Desc:", layout=estilo_input)
+num_c_kw = widgets.FloatText(description="Pot (kW):", layout=widgets.Layout(width='150px'))
+drop_c_fases = widgets.Dropdown(options=[3, 2, 1], description="Fases:", value=3, layout=widgets.Layout(width='100px'))
+num_c_long = widgets.FloatText(description="Long (m):", value=10, layout=widgets.Layout(width='120px'))
+drop_c_cal = widgets.Dropdown(options=backend.ORDEN_CALIBRES, description="Calibre:", value="12", layout=widgets.Layout(width='100px'))
+drop_c_mat = widgets.Dropdown(options=["CU", "AL"], description="Mat:", value="CU", layout=widgets.Layout(width='80px'))
+drop_c_inst = widgets.Dropdown(options=[("Ducto", backend.TipoInstalacion.DUCTO), ("Aire", backend.TipoInstalacion.AIRE)], value=backend.TipoInstalacion.DUCTO, layout=widgets.Layout(width='100px'))
+
+btn_add_otra = widgets.Button(description="GUARDAR Y AGREGAR OTRA", button_style='info', icon='plus')
+btn_terminar_tbt = widgets.Button(description="TERMINAR ESTE TBT", button_style='warning', icon='check')
+out_lista_cargas = widgets.Output()
+
+def mostrar_ingreso_cargas():
+    tbt = sesion_actual["tbt_actual"]
+    
+    with out_main:
+        clear_output()
+        display(widgets.HTML(f"<h3>3️⃣ INGRESANDO CARGAS A: <span style='color:blue'>{tbt.nombre} ({tbt.voltaje}V)</span></h3>"))
+        
+        # Fila 1
+        display(widgets.HBox([txt_c_tag, txt_c_desc, num_c_kw]))
+        # Fila 2
+        display(widgets.HBox([drop_c_fases, num_c_long, drop_c_cal, drop_c_mat, drop_c_inst]))
+        # Botones de Acción
+        display(widgets.HBox([btn_add_otra, btn_terminar_tbt]))
+        
+        display(widgets.HTML("<hr><b>Cargas agregadas en esta sesión:</b>"))
+        display(out_lista_cargas)
+
+def procesar_carga():
+    # Lógica de guardado
+    if num_c_kw.value <= 0: return False
+    
+    tbt = sesion_actual["tbt_actual"]
+    
+    nueva_c = backend.Circuito(
+        tag=txt_c_tag.value,
+        descripcion=f"[{tbt.nombre}] {txt_c_desc.value}", # Identificamos el TBT en la descripción
+        potencia_nominal_kw=num_c_kw.value,
+        voltaje=tbt.voltaje,
+        fases=drop_c_fases.value,
+        factor_potencia=0.9,
+        tipo_operacion=backend.TipoOperacion.CONTINUA,
+        longitud_mts=num_c_long.value,
+        calibre_usuario=drop_c_cal.value,
+        material_conductor=drop_c_mat.value,
+        tipo_instalacion=drop_c_inst.value
+    )
+    
+    backend.SISTEMA_PROYECTO.agregar_c(nueva_c)
+    res = nueva_c.ejecutar_seleccion_conductor()
+    
+    with out_lista_cargas:
+        print(f"✅ {nueva_c.tag} ({num_c_kw.value}kW) -> {res['N']}x{res['Calibre']} {res['Mat']}")
+    
+    # Limpiar campos clave
+    txt_c_tag.value = ""
+    txt_c_desc.value = ""
+    num_c_kw.value = 0.0
+    return True
+
+def on_click_otra(b):
+    if procesar_carga():
+        pass # Se queda en la misma pantalla
+
+def on_click_terminar(b):
+    # Procesar la última si hay datos escritos, si no, solo avanzar
+    if num_c_kw.value > 0:
+        procesar_carga()
+    
+    # Limpiar output de lista para la proxima
+    out_lista_cargas.clear_output()
+    mostrar_decisiones()
+
+btn_add_otra.on_click(on_click_otra)
+btn_terminar_tbt.on_click(on_click_terminar)
+
+# =============================================================================
+# PANTALLA 4: DECISIONES DE FLUJO
+# =============================================================================
+btn_dec_sub = widgets.Button(description="AGREGAR SUB-TABLERO", button_style='info', layout=estilo_btn)
+btn_dec_new = widgets.Button(description="OTRO TBT PRINCIPAL", button_style='primary', layout=estilo_btn)
+btn_dec_fin = widgets.Button(description="FINALIZAR TODO", button_style='danger', layout=estilo_btn)
+
+def mostrar_decisiones():
+    tbt = sesion_actual["tbt_actual"]
+    with out_main:
+        clear_output()
+        display(widgets.HTML(f"<h3>🤔 ¿QUÉ DESEAS HACER AHORA?</h3>"))
+        display(widgets.HTML(f"Acabas de terminar con el tablero: <b>{tbt.nombre}</b>"))
+        
+        display(widgets.VBox([
+            widgets.Label(f"Opción A: Crear un tablero alimentado desde {tbt.nombre} (Aguas abajo)"),
+            btn_dec_sub,
+            widgets.HTML("<br>"),
+            widgets.Label(f"Opción B: Crear un tablero totalmente nuevo e independiente"),
+            btn_dec_new,
+            widgets.HTML("<br>"),
+            widgets.Label(f"Opción C: Terminar y ver reportes"),
+            btn_dec_fin
+        ]))
+
+def ir_a_sub(b): mostrar_crear_tbt(tipo="SUBORDINADO")
+def ir_a_new(b): mostrar_crear_tbt(tipo="PRINCIPAL")
+def ir_a_fin(b):
+    with out_main:
+        clear_output()
+        display(widgets.HTML("<h3>✅ INGRESO DE DATOS FINALIZADO</h3>"))
+        display(widgets.HTML("Ahora puedes ejecutar el módulo <b>ModConds</b> para ver los cálculos."))
+
+btn_dec_sub.on_click(ir_a_sub)
+btn_dec_new.on_click(ir_a_new)
+btn_dec_fin.on_click(ir_a_fin)
+
+# =============================================================================
+# FUNCIÓN DE LANZAMIENTO
+# =============================================================================
 def iniciar_interfaz():
-    display(widgets.HTML("<h3>🏗️ GESTOR DE PROYECTO ELÉCTRICO</h3>"))
-    display(ui_proyecto)
-    display(out_msg)
-    
-    display(widgets.HTML("<hr>"))
-    display(tog_tipo) # Botones grandes para elegir modo
-    display(widgets.VBox([fila_1, fila_2, fila_3]))
+    mostrar_inicio()
+    display(out_main)
     
     display(widgets.HTML("<hr><b>Historial:</b>"))
     display(out_tabla)
