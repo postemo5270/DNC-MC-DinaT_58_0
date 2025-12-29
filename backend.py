@@ -4,7 +4,7 @@ from enum import Enum
 from typing import List, Dict, Optional
 
 # =============================================================================
-# MODULO BACKEND: BASE DE DATOS Y LÓGICA DE NEGOCIO (V3 - COMPLETO)
+# MODULO BACKEND: BASE DE DATOS Y LÓGICA DE NEGOCIO (V-FINAL)
 # =============================================================================
 
 ORDEN_CALIBRES = [
@@ -49,8 +49,6 @@ BD_CABLES_AL = {
     "1000":{"A_DUCTO": 500, "A_AIRE": 845,  "A_AGRUP": 716, "R": 0.06,  "X": 0.115}
 }
 
-TRANSFORMADORES_NEMA = [15, 30, 45, 75, 112.5, 150, 225, 300, 500, 750, 1000, 1500, 2000, 2500]
-
 class TipoOperacion(Enum):
     CONTINUA = "C"
     RESPALDO = "R"
@@ -58,7 +56,11 @@ class TipoOperacion(Enum):
 class TipoInstalacion(Enum):
     DUCTO = "DUCTO"   
     AIRE = "AIRE"     
-    AGRUP = "AGRUP"   
+    AGRUP = "AGRUP"
+    # Nuevas opciones recuperadas
+    BANDEJA = "BANDEJA"
+    BANCO_DUCTOS = "BANCO"
+    TRENZADA = "RED TRENZADA"
 
 @dataclass
 class Circuito:
@@ -80,8 +82,6 @@ class Circuito:
     
     MAX_CAIDA: float = 3.0
     _res_conductor: dict = field(default_factory=dict)
-    
-    # Cache de resultados de carga
     _kva_nominal: float = 0.0
 
     def _get_bd(self):
@@ -94,7 +94,6 @@ class Circuito:
         if self.tiene_sut: p_extra += 0.01
         kw_carga = pot_op * (1 + p_extra)
         fp = self.factor_potencia if self.factor_potencia > 0 else 0.9
-        
         self._kva_nominal = kw_carga / fp
         
         if self.voltaje > 0:
@@ -104,8 +103,14 @@ class Circuito:
         return i_nom, kw_carga, self._kva_nominal
 
     def _get_ampacidad_real(self, datos_cable):
+        # Mapeo de nuevas opciones a las columnas existentes en la BD
         if self.tipo_instalacion == TipoInstalacion.DUCTO: return datos_cable["A_DUCTO"]
+        elif self.tipo_instalacion == TipoInstalacion.BANCO_DUCTOS: return datos_cable["A_DUCTO"] # Asumimos similar a ducto
+        
         elif self.tipo_instalacion == TipoInstalacion.AIRE: return datos_cable["A_AIRE"]
+        elif self.tipo_instalacion == TipoInstalacion.BANDEJA: return datos_cable["A_AIRE"] # Bandeja ventilada ~ Aire libre
+        elif self.tipo_instalacion == TipoInstalacion.TRENZADA: return datos_cable["A_AIRE"] # Red aérea ~ Aire libre
+        
         elif self.tipo_instalacion == TipoInstalacion.AGRUP: return datos_cable["A_AGRUP"]
         return 0
 
@@ -114,7 +119,6 @@ class Circuito:
         i_req = i_nom * 1.25
         bd = self._get_bd()
         
-        # 1. Optimización (Buscar el menor que cumpla con 1 conductor)
         cal_opt = "750"
         for c in ORDEN_CALIBRES:
             dat = bd.get(c)
@@ -126,18 +130,15 @@ class Circuito:
                     cal_opt = c
                     break
         
-        # 2. Decisión contra Usuario
         u_idx = ORDEN_CALIBRES.index(self.calibre_usuario) if self.calibre_usuario in ORDEN_CALIBRES else -1
         o_idx = ORDEN_CALIBRES.index(cal_opt)
         
         sel_cal = self.calibre_usuario
         nota = "Usuario"
-        # Si el usuario eligió uno MUY grande (idx > opt), optimizamos
         if u_idx > o_idx: 
             sel_cal = cal_opt
             nota = "Optimizado"
         
-        # 3. Cálculo Final (N paralelos)
         dat_sel = bd.get(sel_cal)
         n = 1
         while n <= 10:
@@ -149,36 +150,10 @@ class Circuito:
         cap_real = self._get_ampacidad_real(dat_sel) * n
         dv_real = self._calc_dv(n, dat_sel["R"], dat_sel["X"], i_nom)
         
-        # 4. Evidencia (El inmediatamente anterior o menor)
-        prev_n = n
-        prev_cal = sel_cal
-        if n > 1: prev_n = n - 1 
-        else:
-            if sel_cal in ORDEN_CALIBRES:
-                curr_idx = ORDEN_CALIBRES.index(sel_cal)
-                if curr_idx > 0: prev_cal = ORDEN_CALIBRES[curr_idx - 1]
-                else: prev_cal = None
-            else: prev_cal = None
-        
-        prev_desc = "N/A (Min)"
-        prev_dv, prev_cap = 0.0, 0.0
-        
-        if prev_cal:
-            dat_prev = bd.get(prev_cal)
-            if dat_prev:
-                prev_dv = self._calc_dv(prev_n, dat_prev["R"], dat_prev["X"], i_nom)
-                prev_cap = self._get_ampacidad_real(dat_prev) * prev_n
-                prev_desc = f"{prev_n} x {prev_cal}"
-                fail_reason = ""
-                if prev_cap < i_req: fail_reason = "(I<Ireq)"
-                elif prev_dv > self.MAX_CAIDA: fail_reason = "(Reg>3%)"
-                if fail_reason: prev_desc += f" {fail_reason}"
-        
         self._res_conductor = {
             "Calibre": sel_cal, "N": n, "Mat": self.material_conductor,
             "Capacidad": cap_real, "I_Req": i_req, "I_Nom": i_nom,
             "DV": dv_real, "R_unit": dat_sel["R"], "X_unit": dat_sel["X"], "Nota": nota,
-            "Prev_Desc": prev_desc, "Prev_DV": prev_dv, "Prev_Cap": prev_cap,
             "Instalacion": self.tipo_instalacion.value
         }
         return self._res_conductor
@@ -190,87 +165,16 @@ class Circuito:
         return (v_drop / self.voltaje) * 100
 
 class Tablero:
-    def __init__(self, nombre, voltaje, fases, fd=1.0):
+    def __init__(self, nombre, voltaje, fases):
         self.nombre = nombre
         self.voltaje = voltaje
         self.fases = fases
-        self.fd = fd
         self.circuitos = []
         self.sub_tableros = []
-        
-        # Resultados de Cálculo
-        self.kva_instalado = 0.0
         self.kva_demandado = 0.0
-        self.kw_instalado = 0.0
     
     def agregar_c(self, c): self.circuitos.append(c)
     def agregar_s(self, t): self.sub_tableros.append(t)
-    
-    def calcular_cargas_tablero(self):
-        """Suma circuitos, hijos y aplica diversidad"""
-        sum_kva = 0.0
-        sum_kw = 0.0
-        
-        # 1. Sumar Circuitos Propios
-        for c in self.circuitos:
-            c.ejecutar_seleccion_conductor() # Asegurar que esté calculado
-            _, kw_c, kva_c = c.calcular_corriente_carga()
-            sum_kva += kva_c
-            sum_kw += kw_c
-            
-        # 2. Sumar Sub-Tableros (Recursividad)
-        for sub in self.sub_tableros:
-            sub.calcular_cargas_tablero() # Primero calculamos al hijo
-            sum_kva += sub.kva_demandado # Sumamos su demanda (ya diversificada)
-            sum_kw += sub.kva_demandado * 0.9 # Estimamos kW del hijo (o podríamos sumar kW real)
-            
-        self.kva_instalado = sum_kva
-        self.kw_instalado = sum_kw
-        self.kva_demandado = self.kva_instalado * self.fd
-        
-        return self.kva_demandado
 
-class Transformador:
-    def __init__(self, nombre, reserva=0.0):
-        self.nombre = nombre
-        self.reserva = reserva
-        self.tableros = []
-        
-        # Resultados
-        self.kva_total_demandado = 0.0
-        self.capacidad_nema_kya = 0.0
-        self.nivel_carga_pct = 0.0
-        self.seleccion_txt = ""
-
-    def ejecutar_calculo_transformador(self):
-        # 1. Sumar todos los tableros principales
-        total_d = 0.0
-        for t in self.tableros:
-            total_d += t.calcular_cargas_tablero()
-        
-        self.kva_total_demandado = total_d * (1 + self.reserva)
-        
-        # 2. Seleccionar NEMA
-        sel = None
-        for cap in TRANSFORMADORES_NEMA:
-            if cap >= self.kva_total_demandado:
-                sel = cap
-                break
-        
-        if sel is None:
-            sel = TRANSFORMADORES_NEMA[-1]
-            self.seleccion_txt = f"⚠️ EXCEPCIONAL: > {sel} kVA"
-        else:
-            self.seleccion_txt = f"TRANSFORMADOR {sel} kVA"
-            
-        self.capacidad_nema_kya = sel
-        
-        if sel > 0:
-            self.nivel_carga_pct = (self.kva_total_demandado / sel) * 100
-        else:
-            self.nivel_carga_pct = 0.0
-            
-        return self.capacidad_nema_kya
-
-# --- MEMORIA GLOBAL DEL PROYECTO ---
+# --- MEMORIA GLOBAL ---
 SISTEMA_PROYECTO = Tablero("Tablero General", 480, 3)
