@@ -2,78 +2,47 @@ import ipywidgets as widgets
 from IPython.display import display, clear_output, Markdown
 import backend
 
-# =============================================================================
-# MÓDULO DE SELECCIÓN DE TRANSFORMADOR
-# =============================================================================
+# --- WIDGETS ---
+style = widgets.Layout(width='98%')
+drop_tableros = widgets.Dropdown(description="TABLERO:", layout=style, style={'description_width': 'initial'})
+drop_tipo = widgets.Dropdown(options=[("Aceite Mineral", "ACEITE_MINERAL"), ("Seco", "SECO")], description="Tipo:", value="ACEITE_MINERAL", layout=style)
+drop_refrig = widgets.Dropdown(options=["ONAN", "ONAF", "AN", "AF"], description="Refrig:", value="ONAN", layout=style)
+num_v_pri = widgets.FloatText(description="V Pri:", value=13200, layout=widgets.Layout(width='48%'))
+num_v_sec = widgets.FloatText(description="V Sec:", value=480, disabled=True, layout=widgets.Layout(width='48%'))
+slide_res = widgets.FloatSlider(value=20, min=0, max=50, description='Reserva %:', layout=style)
+btn_calc = widgets.Button(description="CALCULAR", button_style='danger', icon='bolt', layout=style)
+out = widgets.Output()
 
-style_full = widgets.Layout(width='98%', margin='5px 0')
-style_half = widgets.Layout(width='48%', margin='5px')
+def al_cambiar_tablero(change):
+    if change['type'] == 'change' and change['name'] == 'value':
+        backend.SISTEMA_PROYECTO = backend.MEMORIA_TABLEROS[change['new']]
+        num_v_sec.value = backend.SISTEMA_PROYECTO.voltaje
+        with out: clear_output()
 
-drop_tipo = widgets.Dropdown(
-    options=[("Aceite Mineral", "ACEITE_MINERAL"), ("Aceite Vegetal (FR3)", "ACEITE_VEGETAL"), ("Seco (Resina/VPI)", "SECO")],
-    description="Tipo:", value="ACEITE_MINERAL", layout=style_full
-)
+drop_tableros.observe(al_cambiar_tablero, names='value')
 
-drop_refrig = widgets.Dropdown(
-    options=["ONAN", "ONAF", "KNAN", "KNAF", "AN", "AF"],
-    description="Refrig:", value="ONAN", layout=style_full
-)
-
-num_v_pri = widgets.FloatText(description="V Primario:", value=13200, step=100, layout=style_half)
-num_v_sec = widgets.FloatText(description="V Secun:", value=480, disabled=True, layout=style_half)
-
-slide_reserva = widgets.FloatSlider(
-    value=20, min=0, max=50, step=5,
-    description='Reserva %:', continuous_update=False, layout=style_full
-)
-
-btn_calc_trafo = widgets.Button(description="CALCULAR TRANSFORMADOR", button_style='danger', icon='bolt', layout=style_full)
-out_trafo = widgets.Output()
-
-def actualizar_voltaje_secundario():
-    if backend.SISTEMA_PROYECTO: num_v_sec.value = backend.SISTEMA_PROYECTO.voltaje
-
-def ejecutar_calculo_trafo(b):
-    out_trafo.clear_output()
+def ejecutar(b):
+    out.clear_output()
     tbt = backend.SISTEMA_PROYECTO
-    kva_load, kw_load = tbt.calcular_carga_total()
-    
-    if kva_load <= 0:
-        with out_trafo: print("⚠️ El tablero no tiene carga.")
+    kva, kw = tbt.calcular_carga_total()
+    if kva <= 0:
+        with out: print("⚠️ Tablero sin carga.")
         return
-
-    nuevo_trafo = backend.Transformador(
-        tipo=drop_tipo.value, refrigeracion=drop_refrig.value, reserva_deseada=slide_reserva.value,
-        voltaje_pri=num_v_pri.value, voltaje_sec=tbt.voltaje
-    )
-    res = nuevo_trafo.calcular(kva_load, kw_load)
-    tbt.trafo_asociado = nuevo_trafo
+    tr = backend.Transformador(drop_tipo.value, drop_refrig.value, slide_res.value, num_v_pri.value, tbt.voltaje)
+    res = tr.calcular(kva, kw)
     
-    with out_trafo:
-        display(Markdown(f"### ⚡ Resultados para {tbt.nombre}"))
-        print(f"🔹 Carga Instalada: {round(kva_load, 2)} kVA ({round(kw_load, 2)} kW)")
-        print(f"🔹 Carga + Reserva ({slide_reserva.value}%): {round(nuevo_trafo.kva_requerido, 2)} kVA")
-        print("-" * 40)
-        display(widgets.HTML(f"""
-        <table style="width:100%; border: 1px solid #ccc;">
-            <tr style="background-color: #f0f0f0;"><th>TRAFO SELECCIONADO</th><th>EFICIENCIA (DOE 2016)</th><th>CARGABILIDAD</th></tr>
-            <tr>
-                <td style="font-size: 1.2em; color: darkblue; text-align:center;"><b>{res['kVA_Com']} kVA</b></td>
-                <td style="text-align:center;">{res['Eff']}%</td>
-                <td style="text-align:center; color: {'green' if res['Cargabilidad'] < 80 else 'orange'};">{round(res['Cargabilidad'], 2)}%</td>
-            </tr>
-        </table>
-        <br>
-        <table style="width:100%">
-            <tr><td><b>FP Ponderado (Entrada):</b></td><td>{round(res['FP_Final'], 3)}</td></tr>
-            <tr><td><b>Corriente Primaria ({num_v_pri.value}V):</b></td><td>{round(res['I_Pri'], 1)} A</td></tr>
-            <tr><td><b>Corriente Secundaria ({tbt.voltaje}V):</b></td><td>{round(res['I_Sec'], 1)} A</td></tr>
-        </table>
-        """))
+    with out:
+        display(Markdown(f"### Result: {tbt.nombre}"))
+        print(f"Carga: {round(kva,1)} kVA | Req: {round(tr.kva_requerido,1)}")
+        display(widgets.HTML(f"<h4 style='color:blue'>TRAFO: {res['kVA_Com']} kVA (Eff: {res['Eff']}%)</h4>"))
+        print(f"I_Pri: {round(res['I_Pri'],1)}A | I_Sec: {round(res['I_Sec'],1)}A")
 
-btn_calc_trafo.on_click(ejecutar_calculo_trafo)
+btn_calc.on_click(ejecutar)
 
 def iniciar_modulo_trafo():
-    actualizar_voltaje_secundario()
+    if not backend.MEMORIA_TABLEROS: backend.MEMORIA_TABLEROS = [backend.SISTEMA_PROYECTO]
+    drop_tableros.options = [(t.nombre, i) for i, t in enumerate(backend.MEMORIA_TABLEROS)]
+    drop_tableros.value = 0
     display(widgets.HTML("<h3>🔌 SELECCIÓN DE TRANSFORMADOR</h3>"))
-    display(widgets.VBox([widgets.HBox([num_v_pri, num_v_sec]), drop_tipo, drop_refrig, slide_reserva, btn_calc_trafo, out_trafo]))
+    display(drop_tableros)
+    display(widgets.VBox([widgets.HBox([num_v_pri, num_v_sec]), drop_tipo, drop_refrig, slide_res, btn_calc, out]))
