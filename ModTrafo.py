@@ -1,113 +1,168 @@
 import ipywidgets as widgets
-from IPython.display import display, clear_output, Markdown, HTML
+from IPython.display import display, clear_output, HTML
 import backend
 
 # =============================================================================
-# MÓDULO DE TRANSFORMADORES (DISEÑO COMPACTO)
+# MÓDULO DE TRANSFORMADOR Y BARRAJES (REPORTE EN CASCADA PRO)
 # =============================================================================
 
-# --- ESTILOS COMPACTOS ---
-layout_full = widgets.Layout(width='98%')
-layout_half = widgets.Layout(width='48%')
-style_desc = {'description_width': 'initial'} # Para que quepan etiquetas largas
+# --- ESTILOS VISUALES (CSS INTEGRADO) ---
+# Usamos tablas HTML reales para evitar el problema de la separación excesiva
+ESTILO_TABLA = """
+<style>
+    .eng-table {
+        font-family: 'Arial', sans-serif;
+        border-collapse: collapse;
+        width: 100%; /* Ancho ajustado al contenedor */
+        max-width: 600px; /* Evita que se estire demasiado */
+        margin-bottom: 20px;
+        background-color: #ffffff;
+        border: 1px solid #dcdcdc;
+    }
+    .eng-table th {
+        background-color: #2c3e50;
+        color: white;
+        padding: 8px;
+        text-align: left;
+        font-size: 14px;
+    }
+    .eng-table td {
+        padding: 6px 10px;
+        border-bottom: 1px solid #eee;
+        font-size: 13px;
+        color: #333;
+    }
+    .eng-table tr:last-child td { border-bottom: none; }
+    .eng-val { text-align: right; font-weight: bold; color: #000; }
+    .eng-section { 
+        background-color: #f2f3f4; 
+        font-weight: bold; 
+        color: #2c3e50; 
+        text-transform: uppercase;
+        font-size: 12px;
+        padding: 4px 8px;
+    }
+    .highlight-row { background-color: #eafaf1; }
+    .trafo-header {
+        background-color: #c0392b !important; /* Rojo para Trafo */
+        text-align: center !important;
+    }
+    .trafo-result {
+        font-size: 18px;
+        color: #c0392b;
+        font-weight: bold;
+        text-align: center;
+        padding: 10px;
+        border: 2px solid #c0392b;
+        background-color: #fdedec;
+        margin: 10px 0;
+    }
+</style>
+"""
 
 # --- INPUTS ---
-drop_tableros = widgets.Dropdown(description="<b>TABLERO:</b>", layout=layout_full, style=style_desc)
+layout_full = widgets.Layout(width='98%')
+layout_half = widgets.Layout(width='48%')
 
-# Fila 1: Voltajes
+# Datos de Entrada del Transformador
 in_v_pri = widgets.FloatText(description="V. Primario:", value=13200, step=100, layout=layout_half)
-in_v_sec = widgets.FloatText(description="V. Secundario:", value=480, disabled=True, layout=layout_half)
+# Nota: El secundario se toma del tablero principal automáticamente
 
-# Fila 2: Selección Trafo
 drop_tipo = widgets.Dropdown(options=[("Aceite Mineral", "ACEITE_MINERAL"), ("Seco (Resina)", "SECO")], description="Tipo:", value="ACEITE_MINERAL", layout=layout_half)
 drop_refrig = widgets.Dropdown(options=["ONAN", "ONAF", "AN", "AF"], description="Refrig:", value="ONAN", layout=layout_half)
-
-# Fila 3: Reserva
 slide_res = widgets.FloatSlider(value=20, min=0, max=50, description='Reserva %:', layout=layout_full)
 
-# Botón
-btn_calc = widgets.Button(description="CALCULAR", button_style='primary', icon='bolt', layout=layout_full)
+btn_calc = widgets.Button(description="CALCULAR PROYECTO COMPLETO", button_style='danger', icon='list-ol', layout=layout_full)
 out_res = widgets.Output()
 
-def al_cambiar_tablero(change):
-    if change['type'] == 'change' and change['name'] == 'value':
-        backend.SISTEMA_PROYECTO = backend.MEMORIA_TABLEROS[change['new']]
-        in_v_sec.value = backend.SISTEMA_PROYECTO.voltaje
-        with out_res: clear_output()
-
-drop_tableros.observe(al_cambiar_tablero, names='value')
-
-def ejecutar(b):
+def ejecutar_proyecto(b):
     out_res.clear_output()
-    tbt = backend.SISTEMA_PROYECTO
-    datos_tbt = tbt.get_datos_totales() # Trae kVAR, I_Barraje, etc.
     
-    if datos_tbt["kVA"] <= 0:
-        with out_res: print("⚠️ El tablero seleccionado no tiene carga.")
+    # 1. Validar que existan tableros
+    lista_tbt = backend.MEMORIA_TABLEROS
+    if not lista_tbt:
+        lista_tbt = [backend.SISTEMA_PROYECTO] # Fallback si solo hay uno
+        
+    if not lista_tbt[0].circuitos and not lista_tbt[0].sub_tableros:
+        with out_res: print("⚠️ No hay datos cargados en el proyecto.")
         return
 
-    # Calcular Trafo
-    tr = backend.Transformador(drop_tipo.value, drop_refrig.value, slide_res.value, in_v_pri.value, tbt.voltaje)
-    res_tr = tr.calcular(datos_tbt["kVA"], datos_tbt["kW"], datos_tbt["kVAR"])
-    tbt.trafo_asociado = tr
+    # Iniciar HTML con Estilos
+    html_content = ESTILO_TABLA
     
-    # --- GENERACIÓN DEL REPORTE HTML ---
-    html_report = f"""
-    <style>
-        .report-box {{ border: 1px solid #ddd; padding: 10px; border-radius: 5px; background-color: #f9f9f9; }}
-        .report-title {{ color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 5px; margin-bottom: 10px; }}
-        .data-row {{ display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px dotted #ccc; }}
-        .lbl {{ font-weight: bold; color: #555; }}
-        .val {{ color: #000; }}
-        .highlight {{ background-color: #e8f6f3; font-weight: bold; color: #117a65; }}
-    </style>
+    # 2. Bucle: Mostrar Dimensionamiento de Barrajes (Tablero por Tablero)
+    html_content += "<h2>1. DIMENSIONAMIENTO DE BARRAJES (TABLEROS)</h2>"
     
-    <div class="report-box">
-        <h3 class="report-title">1.1 TABLERO: {tbt.nombre}</h3>
-        <div class="data-row"><span class="lbl">Potencia Activa (P):</span> <span class="val">{round(datos_tbt['kW'], 2)} kW</span></div>
-        <div class="data-row"><span class="lbl">Potencia Reactiva (Q):</span> <span class="val">{round(datos_tbt['kVAR'], 2)} kVAR</span></div>
-        <div class="data-row"><span class="lbl">Potencia Aparente (S):</span> <span class="val">{round(datos_tbt['kVA'], 2)} kVA</span></div>
-        <div class="data-row"><span class="lbl">Factor de Potencia (FP):</span> <span class="val">{round(datos_tbt['FP'], 3)}</span></div>
-        <div class="data-row"><span class="lbl">Corriente de Carga ({tbt.voltaje}V):</span> <span class="val">{round(datos_tbt['I_Carga'], 1)} A</span></div>
-        <div class="data-row highlight"><span class="lbl">CAPACIDAD MÍNIMA BARRAJE (Ix1.25):</span> <span class="val">{round(datos_tbt['I_Barraje'], 1)} A</span></div>
+    for i, tbt in enumerate(lista_tbt):
+        datos = tbt.get_datos_totales()
         
-        <br>
+        # Construimos la tabla para este tablero
+        html_content += f"""
+        <table class="eng-table">
+            <thead>
+                <tr><th colspan="2">TABLERO {i+1}: {tbt.nombre} ({tbt.voltaje}V)</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Potencia Activa Total (P)</td><td class="eng-val">{round(datos['kW'], 2)} kW</td></tr>
+                <tr><td>Potencia Reactiva Total (Q)</td><td class="eng-val">{round(datos['kVAR'], 2)} kVAR</td></tr>
+                <tr><td>Potencia Aparente Total (S)</td><td class="eng-val">{round(datos['kVA'], 2)} kVA</td></tr>
+                <tr><td>Factor de Potencia Promedio</td><td class="eng-val">{round(datos['FP'], 3)}</td></tr>
+                <tr><td>Corriente de Carga</td><td class="eng-val">{round(datos['I_Carga'], 1)} A</td></tr>
+                <tr class="highlight-row">
+                    <td><b>CAPACIDAD BARRAJE (I x 1.25)</b></td>
+                    <td class="eng-val" style="color:#27ae60">{round(datos['I_Barraje'], 1)} A</td>
+                </tr>
+            </tbody>
+        </table>
+        """
         
-        <h3 class="report-title">1.2 TRANSFORMADOR SELECCIONADO</h3>
-        <div style="text-align:center; margin: 10px 0;">
-            <span style="font-size: 20px; font-weight: bold; color: darkblue; border: 2px solid darkblue; padding: 5px 15px; border-radius: 10px;">
-                {res_tr['kVA_Com']} kVA
-            </span>
-        </div>
-        
-        <div class="data-row"><span class="lbl">Reserva Deseada:</span> <span class="val">{slide_res.value}%</span></div>
-        <div class="data-row"><span class="lbl">Cargabilidad Real:</span> <span class="val">{round(res_tr['Cargabilidad'], 2)}%</span></div>
-        <div class="data-row"><span class="lbl">Eficiencia (DOE 2016):</span> <span class="val">{res_tr['Eff']}%</span></div>
-        <div class="data-row"><span class="lbl">Pérdidas Estimadas:</span> <span class="val">{round(res_tr['Perdidas_kW'], 2)} kW</span></div>
-        <div class="data-row"><span class="lbl">Potencia de Entrada (S_in):</span> <span class="val">{round(res_tr['S_In'], 2)} kVA</span></div>
-        <div class="data-row"><span class="lbl">FP Final (con pérdidas):</span> <span class="val">{round(res_tr['FP_In'], 3)}</span></div>
-        <div class="data-row"><span class="lbl">Corriente Nominal Primario ({in_v_pri.value}V):</span> <span class="val">{round(res_tr['I_Pri_Nom'], 1)} A</span></div>
-        <div class="data-row"><span class="lbl">Corriente Nominal Secundario ({tbt.voltaje}V):</span> <span class="val">{round(res_tr['I_Sec_Nom'], 1)} A</span></div>
+    # 3. Cálculo del Transformador (Basado en el Tablero Principal - Índice 0)
+    tbt_main = lista_tbt[0]
+    datos_main = tbt_main.get_datos_totales()
+    
+    tr = backend.Transformador(drop_tipo.value, drop_refrig.value, slide_res.value, in_v_pri.value, tbt_main.voltaje)
+    res_tr = tr.calcular(datos_main["kVA"], datos_main["kW"], datos_main["kVAR"])
+    tbt_main.trafo_asociado = tr
+    
+    html_content += f"""
+    <br>
+    <h2>2. SELECCIÓN DE TRANSFORMADOR GENERAL</h2>
+    <div class="trafo-result">
+        TRAFO SELECCIONADO: {res_tr['kVA_Com']} kVA
     </div>
+    
+    <table class="eng-table">
+        <thead>
+            <tr><th colspan="2" class="trafo-header">ESPECIFICACIONES TÉCNICAS</th></tr>
+        </thead>
+        <tbody>
+            <tr><td class="eng-section" colspan="2">ENTRADA</td></tr>
+            <tr><td>Carga Instalada (Tablero Principal)</td><td class="eng-val">{round(datos_main['kVA'], 2)} kVA</td></tr>
+            <tr><td>Reserva Deseada</td><td class="eng-val">{slide_res.value}%</td></tr>
+            <tr><td>Potencia Requerida (Carga + Reserva)</td><td class="eng-val">{round(tr.kva_requerido, 2)} kVA</td></tr>
+            
+            <tr><td class="eng-section" colspan="2">DESEMPEÑO</td></tr>
+            <tr><td>Eficiencia (Norma DOE 2016)</td><td class="eng-val">{res_tr['Eff']}%</td></tr>
+            <tr><td>Pérdidas Estimadas (a Plena Carga)</td><td class="eng-val">{round(res_tr['Perdidas_kW'], 2)} kW</td></tr>
+            <tr><td>Cargabilidad Real</td><td class="eng-val" style="color:{'green' if res_tr['Cargabilidad'] < 85 else 'orange'}">{round(res_tr['Cargabilidad'], 2)}%</td></tr>
+            
+            <tr><td class="eng-section" colspan="2">ELECTRICO</td></tr>
+            <tr><td>Factor de Potencia Entrada (c/Pérdidas)</td><td class="eng-val">{round(res_tr['FP_In'], 3)}</td></tr>
+            <tr><td>Corriente Primaria Nominal ({in_v_pri.value}V)</td><td class="eng-val">{round(res_tr['I_Pri_Nom'], 1)} A</td></tr>
+            <tr><td>Corriente Secundaria Nominal ({tbt_main.voltaje}V)</td><td class="eng-val">{round(res_tr['I_Sec_Nom'], 1)} A</td></tr>
+        </tbody>
+    </table>
     """
-    with out_res: display(HTML(html_report))
+    
+    with out_res:
+        display(HTML(html_content))
 
-btn_calc.on_click(ejecutar)
+btn_calc.on_click(ejecutar_proyecto)
 
 def iniciar_modulo_trafo():
-    # Inicializar lista
-    if not backend.MEMORIA_TABLEROS: backend.MEMORIA_TABLEROS = [backend.SISTEMA_PROYECTO]
-    drop_tableros.options = [(t.nombre, i) for i, t in enumerate(backend.MEMORIA_TABLEROS)]
-    drop_tableros.value = 0
-    
-    # Interfaz Compacta
-    display(widgets.HTML("<h3>🔌 CÁLCULO DE TRANSFORMADOR</h3>"))
-    display(drop_tableros)
-    
-    # Filas compactas (HBox)
-    display(widgets.HBox([in_v_pri, in_v_sec]))
+    display(widgets.HTML("<h3>⚡ CONFIGURACIÓN DE TRANSFORMADOR</h3>"))
+    display(widgets.HBox([in_v_pri, widgets.Label(value="  (El Secundario se detecta autom.)")]))
     display(widgets.HBox([drop_tipo, drop_refrig]))
-    
     display(slide_res)
     display(btn_calc)
     display(out_res)
