@@ -207,6 +207,3 @@ btn_dec_fin.on_click(ir_a_fin)
 def iniciar_interfaz():
     mostrar_inicio()
     display(out_main)
-    
-    display(widgets.HTML("<hr><b>Historial:</b>"))
-    display(out_tabla)
