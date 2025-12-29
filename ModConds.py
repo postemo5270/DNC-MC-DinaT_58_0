@@ -2,48 +2,53 @@ import pandas as pd
 from IPython.display import display, Markdown
 import backend
 
+# =============================================================================
+# MÓDULO DE REPORTE DE CONDUCTORES (REPORTE SECUENCIAL COMPLETO)
+# =============================================================================
+
 def mostrar_reporte_conductores():
-    # 1. Verificar si hay datos
-    tablero = backend.SISTEMA_PROYECTO
-    if not tablero.circuitos:
-        print("⚠️ No hay circuitos ingresados en la memoria.")
-        print("   Por favor, ejecuta primero 'IngCargas' y agrega circuitos.")
-        return
-
-    print(f"📊 GENERANDO REPORTE DE CONDUCTORES PARA: {tablero.nombre}")
-    print("="*60)
-
-    # 2. Recopilar resultados
-    datos_reporte = []
+    # 1. Detectar qué tableros hay en memoria
+    # Si usamos CargaDatos, estarán en MEMORIA_TABLEROS. Si fue manual, quizás solo esté SISTEMA_PROYECTO.
+    if backend.MEMORIA_TABLEROS:
+        lista_tableros = backend.MEMORIA_TABLEROS
+    else:
+        lista_tableros = [backend.SISTEMA_PROYECTO]
     
-    for c in tablero.circuitos:
-        # Ejecutamos el cálculo matemático del backend
-        res = c.ejecutar_seleccion_conductor()
+    display(Markdown("# 📊 REPORTE CONSOLIDADO DEL PROYECTO"))
+    print("=" * 80)
+    
+    # 2. Bucle: Un reporte por cada tablero encontrado
+    for i, tbt in enumerate(lista_tableros):
+        # Título del Tablero
+        display(Markdown(f"### ⚡ {i+1}. Tablero: {tbt.nombre} ({tbt.voltaje}V)"))
         
-        # Preparamos la fila para la tabla
-        fila = {
-            "TAG": c.tag,
-            "Descripción": c.descripcion,
-            "Potencia (kW)": c.potencia_nominal_kw,
-            "I_Nom (A)": round(res["I_Nom"], 1),
-            "I_Req (A)": round(res["I_Req"], 1),
-            "Calibre": res["Calibre"],
-            "Hilos": res["N"],
-            "Capacidad Real": round(res["Capacidad"], 1),
-            "% Reg": round(res["DV"], 2),
-            "Material": res["Mat"],
-            "Nota": res["Nota"]
-        }
-        datos_reporte.append(fila)
+        if not tbt.circuitos:
+            print("   (⚠️ Este tablero no tiene circuitos registrados)")
+            print("_" * 80 + "\n")
+            continue
 
-    # 3. Mostrar Tabla Bonita con Pandas
-    df = pd.DataFrame(datos_reporte)
-    
-    # Reordenar columnas para mejor lectura
-    cols = ["TAG", "Descripción", "Potencia (kW)", "I_Nom (A)", "Calibre", "Hilos", "Material", "% Reg", "Nota"]
-    
-    # Mostrar en pantalla
-    display(Markdown("### 📋 Tabla de Selección de Conductores"))
-    display(df[cols])
-    
-    print("\n✅ Cálculo finalizado.")
+        # Recopilar datos
+        datos = []
+        for c in tbt.circuitos:
+            # Verificar si ya se calculó, si no, calcular ahora
+            res = c._res_conductor if c._res_conductor else c.ejecutar_seleccion_conductor()
+            
+            datos.append({
+                "TAG": c.tag,
+                "Descripción": c.descripcion,
+                "kW": c.potencia_nominal_kw,
+                "Instalación": c.tipo_instalacion.value,
+                "I_Nom": round(res.get("I_Nom", 0), 1),
+                "Calibre": res.get("Calibre", "?"),
+                "Hilos": res.get("N", 1), # Corregido: Agregamos Hilos
+                "Mat": res.get("Mat", "?"),
+                "%Reg": round(res.get("DV", 0), 2),
+                "Nota": res.get("Nota", "")
+            })
+
+        # Mostrar Tabla
+        df = pd.DataFrame(datos)
+        cols = ["TAG", "Descripción", "kW", "I_Nom", "Calibre", "Hilos", "Mat", "Instalación", "%Reg", "Nota"]
+        
+        display(df[cols])
+        print("\n" + "_"*80 + "\n") # Línea separadora entre tableros
