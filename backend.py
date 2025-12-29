@@ -3,15 +3,18 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Dict, Optional
 
-# --- MEMORIA GLOBAL PARA LISTAS DESPLEGABLES ---
+# --- MEMORIA GLOBAL ---
 MEMORIA_TABLEROS = [] 
 
 # --- TABLAS REFERENCIA ---
 ORDEN_CALIBRES = ["12", "10", "8", "6", "4", "2", "1/0", "2/0", "3/0", "4/0", "250", "350", "500", "750", "1000"]
+
+# Eficiencias DOE 2016
 DOE_2016_LIQUID_3PH = {15: 98.65, 30: 98.93, 45: 99.03, 75: 99.19, 112.5: 99.25, 150: 99.28, 225: 99.33, 300: 99.36, 500: 99.42, 750: 99.46, 1000: 99.49, 1500: 99.52, 2000: 99.55, 2500: 99.57}
 DOE_2016_DRY_MV_3PH = {15: 97.50, 30: 97.90, 45: 98.10, 75: 98.33, 112.5: 98.52, 150: 98.65, 225: 98.75, 300: 98.83, 500: 98.94, 750: 99.03, 1000: 99.08, 1500: 99.14, 2000: 99.18, 2500: 99.22}
 KVA_ESTANDAR = sorted(list(DOE_2016_LIQUID_3PH.keys()))
 
+# Base de Datos Cables
 BD_CABLES_CU = {"12": {"A_DUCTO": 30, "A_AIRE": 40, "R": 6.6, "X": 0.177}, "10": {"A_DUCTO": 40, "A_AIRE": 55, "R": 3.9, "X": 0.164}, "8": {"A_DUCTO": 55, "A_AIRE": 80, "R": 2.56, "X": 0.171}, "6": {"A_DUCTO": 75, "A_AIRE": 105, "R": 1.61, "X": 0.167}, "4": {"A_DUCTO": 95, "A_AIRE": 140, "R": 1.02, "X": 0.157}, "2": {"A_DUCTO": 130, "A_AIRE": 190, "R": 0.62, "X": 0.148}, "1/0": {"A_DUCTO": 170, "A_AIRE": 260, "R": 0.39, "X": 0.141}, "2/0": {"A_DUCTO": 195, "A_AIRE": 300, "R": 0.33, "X": 0.141}, "3/0": {"A_DUCTO": 225, "A_AIRE": 350, "R": 0.26, "X": 0.138}, "4/0": {"A_DUCTO": 260, "A_AIRE": 405, "R": 0.21, "X": 0.135}, "250": {"A_DUCTO": 290, "A_AIRE": 455, "R": 0.179, "X": 0.139}, "350": {"A_DUCTO": 350, "A_AIRE": 570, "R": 0.129, "X": 0.099}, "500": {"A_DUCTO": 430, "A_AIRE": 700, "R": 0.093, "X": 0.069}, "750": {"A_DUCTO": 535, "A_AIRE": 855, "R": 0.06, "X": 0.118}, "1000": {"A_DUCTO": 615, "A_AIRE": 1055, "R": 0.04, "X": 0.115}}
 BD_CABLES_AL = {"12": {"A_DUCTO": 25, "A_AIRE": 35, "R": 10.49, "X": 0.177}, "10": {"A_DUCTO": 35, "A_AIRE": 40, "R": 6.56, "X": 0.164}, "8": {"A_DUCTO": 45, "A_AIRE": 60, "R": 4.27, "X": 0.171}, "6": {"A_DUCTO": 60, "A_AIRE": 80, "R": 2.66, "X": 0.167}, "4": {"A_DUCTO": 75, "A_AIRE": 115, "R": 1.67, "X": 0.157}, "2": {"A_DUCTO": 100, "A_AIRE": 150, "R": 1.05, "X": 0.148}, "1/0": {"A_DUCTO": 135, "A_AIRE": 205, "R": 0.66, "X": 0.141}, "2/0": {"A_DUCTO": 150, "A_AIRE": 235, "R": 0.52, "X": 0.138}, "3/0": {"A_DUCTO": 175, "A_AIRE": 275, "R": 0.42, "X": 0.135}, "4/0": {"A_DUCTO": 205, "A_AIRE": 315, "R": 0.33, "X": 0.131}, "250": {"A_DUCTO": 230, "A_AIRE": 355, "R": 0.28, "X": 0.128}, "350": {"A_DUCTO": 280, "A_AIRE": 445, "R": 0.21, "X": 0.125}, "500": {"A_DUCTO": 350, "A_AIRE": 545, "R": 0.14, "X": 0.121}, "750": {"A_DUCTO": 435, "A_AIRE": 700, "R": 0.09, "X": 0.118}, "1000": {"A_DUCTO": 500, "A_AIRE": 845, "R": 0.06, "X": 0.115}}
 
@@ -36,19 +39,51 @@ class Circuito:
         return i_nom, p_op, kva
 
     def ejecutar_seleccion_conductor(self):
-        i_nom, _, _ = self.calcular_corriente_carga(); i_req = i_nom * 1.25; bd = BD_CABLES_AL if self.material_conductor == "AL" else BD_CABLES_CU
-        # Lógica resumida de selección
+        i_nom, _, _ = self.calcular_corriente_carga()
+        i_req = i_nom * 1.25
+        bd = BD_CABLES_AL if self.material_conductor == "AL" else BD_CABLES_CU
+        
+        # 1. Buscar Calibre Base
         cal_opt = "750"
         for c in ORDEN_CALIBRES:
             if c not in bd: continue
             amp = bd[c].get("A_AIRE" if self.tipo_instalacion in [TipoInstalacion.AIRE, TipoInstalacion.BANDEJA, TipoInstalacion.TRENZADA] else "A_DUCTO", 0)
-            dv = (math.sqrt(3) if self.fases==3 else 2) * i_nom * ((bd[c]["R"]*0.9 + bd[c]["X"]*0.43)/1000) * self.longitud_mts / self.voltaje * 100
+            dv = self._calc_dv(1, bd[c]["R"], bd[c]["X"], i_nom)
             if amp >= i_req and dv <= self.MAX_CAIDA:
                 cal_opt = c; break
         
-        # Guardar resultado simplificado
-        self._res_conductor = {"Calibre": cal_opt, "I_Nom": i_nom, "Capacidad": amp, "DV": dv, "Mat": self.material_conductor, "Nota": "Calculado"}
+        # 2. Verificar o Optimizar (Lógica de Hilos N)
+        sel_cal = self.calibre_usuario
+        nota = "Usuario"
+        # Si el usuario puso un calibre menor al óptimo, forzamos el óptimo
+        idx_u = ORDEN_CALIBRES.index(self.calibre_usuario) if self.calibre_usuario in ORDEN_CALIBRES else -1
+        idx_o = ORDEN_CALIBRES.index(cal_opt)
+        if idx_u > idx_o: 
+            sel_cal = cal_opt; nota = "Optimizado"
+
+        dat = bd.get(sel_cal, bd["12"])
+        n = 1
+        # Bucle para aumentar hilos si no cumple Ampacidad o Regulación
+        while n <= 10:
+            amp_unit = dat.get("A_AIRE" if self.tipo_instalacion in [TipoInstalacion.AIRE, TipoInstalacion.BANDEJA] else "A_DUCTO", 0)
+            cap_total = amp_unit * n
+            dv_total = self._calc_dv(n, dat["R"], dat["X"], i_nom)
+            if cap_total >= i_req and dv_total <= self.MAX_CAIDA:
+                break
+            n += 1
+            
+        self._res_conductor = {
+            "Calibre": sel_cal, "N": n, "Mat": self.material_conductor,
+            "Capacidad": amp_unit * n, "I_Req": i_req, "I_Nom": i_nom,
+            "DV": dv_total, "Nota": nota, "Instalacion": self.tipo_instalacion.value
+        }
         return self._res_conductor
+
+    def _calc_dv(self, n, r, x, i):
+        k = math.sqrt(3) if self.fases == 3 else 2
+        z = (r * self.factor_potencia + x * math.sin(math.acos(self.factor_potencia))) / 1000 # Ohm/km -> Ohm/m
+        v_drop = (k * i * z * self.longitud_mts) / n
+        return (v_drop / self.voltaje) * 100
 
 @dataclass
 class Transformador:
@@ -64,7 +99,8 @@ class Transformador:
         self.eficiencia_doe = tbl.get(k_eff, 98.0)
         
         self.cargabilidad = (kva_load / self.kva_comercial * 100) if self.kva_comercial else 0
-        perdidas = kw_load * (1 - self.eficiencia_doe/100.0)
+        eff_dec = self.eficiencia_doe/100.0
+        perdidas = kw_load * (1 - eff_dec)
         s_in = math.sqrt((kw_load + perdidas)**2 + (kva_load * math.sin(math.acos(kw_load/kva_load if kva_load else 1)))**2)
         self.fp_entrada = (kw_load + perdidas) / s_in if s_in else 0.9
         
