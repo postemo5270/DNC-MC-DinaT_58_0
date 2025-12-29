@@ -4,13 +4,29 @@ from enum import Enum
 from typing import List, Dict, Optional
 
 # =============================================================================
-# MODULO BACKEND: BASE DE DATOS Y LÓGICA DE NEGOCIO (V-FINAL)
+# MODULO BACKEND: BASE DE DATOS Y LÓGICA DE NEGOCIO (V-TRAFO)
 # =============================================================================
 
 ORDEN_CALIBRES = [
     "12", "10", "8", "6", "4", "2", 
     "1/0", "2/0", "3/0", "4/0", "250", "350", "500", "750", "1000"
 ]
+
+# --- TABLAS DOE 2016 (Eficiencia mínima al 50% de carga) ---
+# Fuente: 10 CFR 431.192 / 431.196
+DOE_2016_LIQUID_3PH = {
+    15: 98.65, 30: 98.93, 45: 99.03, 75: 99.19, 112.5: 99.25,
+    150: 99.28, 225: 99.33, 300: 99.36, 500: 99.42, 750: 99.46,
+    1000: 99.49, 1500: 99.52, 2000: 99.55, 2500: 99.57
+}
+
+DOE_2016_DRY_MV_3PH = { # Seco Media Tensión (BIL habitual)
+    15: 97.50, 30: 97.90, 45: 98.10, 75: 98.33, 112.5: 98.52,
+    150: 98.65, 225: 98.75, 300: 98.83, 500: 98.94, 750: 99.03,
+    1000: 99.08, 1500: 99.14, 2000: 99.18, 2500: 99.22
+}
+
+KVA_ESTANDAR = sorted(list(DOE_2016_LIQUID_3PH.keys()))
 
 # --- BASE DE DATOS CONDUCTORES (Matriz Ducto/Aire/Agrupado) ---
 BD_CABLES_CU = {
@@ -54,10 +70,9 @@ class TipoOperacion(Enum):
     RESPALDO = "R"
     
 class TipoInstalacion(Enum):
-    DUCTO = "DUCTO"   
-    AIRE = "AIRE"     
+    DUCTO = "DUCTO"    
+    AIRE = "AIRE"      
     AGRUP = "AGRUP"
-    # Nuevas opciones recuperadas
     BANDEJA = "BANDEJA"
     BANCO_DUCTOS = "BANCO"
     TRENZADA = "RED TRENZADA"
@@ -83,6 +98,7 @@ class Circuito:
     MAX_CAIDA: float = 3.0
     _res_conductor: dict = field(default_factory=dict)
     _kva_nominal: float = 0.0
+    _kw_carga: float = 0.0
 
     def _get_bd(self):
         return BD_CABLES_AL if self.material_conductor == "AL" else BD_CABLES_CU
@@ -92,25 +108,23 @@ class Circuito:
         p_extra = 0.0
         if self.tiene_vfd: p_extra += 0.01
         if self.tiene_sut: p_extra += 0.01
-        kw_carga = pot_op * (1 + p_extra)
+        
+        self._kw_carga = pot_op * (1 + p_extra)
         fp = self.factor_potencia if self.factor_potencia > 0 else 0.9
-        self._kva_nominal = kw_carga / fp
+        self._kva_nominal = self._kw_carga / fp
         
         if self.voltaje > 0:
             denom = (math.sqrt(3) * self.voltaje) if self.fases == 3 else self.voltaje
             i_nom = (self._kva_nominal * 1000) / denom
         else: i_nom = 0.0
-        return i_nom, kw_carga, self._kva_nominal
+        return i_nom, self._kw_carga, self._kva_nominal
 
     def _get_ampacidad_real(self, datos_cable):
-        # Mapeo de nuevas opciones a las columnas existentes en la BD
         if self.tipo_instalacion == TipoInstalacion.DUCTO: return datos_cable["A_DUCTO"]
-        elif self.tipo_instalacion == TipoInstalacion.BANCO_DUCTOS: return datos_cable["A_DUCTO"] # Asumimos similar a ducto
-        
+        elif self.tipo_instalacion == TipoInstalacion.BANCO_DUCTOS: return datos_cable["A_DUCTO"]
         elif self.tipo_instalacion == TipoInstalacion.AIRE: return datos_cable["A_AIRE"]
-        elif self.tipo_instalacion == TipoInstalacion.BANDEJA: return datos_cable["A_AIRE"] # Bandeja ventilada ~ Aire libre
-        elif self.tipo_instalacion == TipoInstalacion.TRENZADA: return datos_cable["A_AIRE"] # Red aérea ~ Aire libre
-        
+        elif self.tipo_instalacion == TipoInstalacion.BANDEJA: return datos_cable["A_AIRE"]
+        elif self.tipo_instalacion == TipoInstalacion.TRENZADA: return datos_cable["A_AIRE"]
         elif self.tipo_instalacion == TipoInstalacion.AGRUP: return datos_cable["A_AGRUP"]
         return 0
 
@@ -164,6 +178,89 @@ class Circuito:
         v_drop = (k * i * (z/1000) * self.longitud_mts) / n
         return (v_drop / self.voltaje) * 100
 
+# =============================================================================
+# CLASE TRANSFORMADOR (NUEVA)
+# =============================================================================
+@dataclass
+class Transformador:
+    tipo: str  # "ACEITE_MINERAL", "ACEITE_VEGETAL", "SECO"
+    refrigeracion: str # "ONAN", "ONAF", "KNAN"
+    reserva_deseada: float # Porcentaje (0-100)
+    voltaje_pri: float # 13200
+    voltaje_sec: float # 480
+    
+    # Resultados
+    kva_carga: float = 0.0
+    kva_requerido: float = 0.0
+    kva_comercial: float = 0.0
+    eficiencia_doe: float = 0.0
+    cargabilidad: float = 0.0
+    fp_entrada: float = 0.0
+    i_pri_nom: float = 0.0
+    i_sec_nom: float = 0.0
+    
+    def calcular(self, kva_load, kw_load):
+        self.kva_carga = kva_load
+        
+        # 1. Aplicar Reserva
+        factor_res = 1 - (self.reserva_deseada / 100.0)
+        if factor_res <= 0: factor_res = 0.1
+        self.kva_requerido = kva_load / factor_res
+        
+        # 2. Selección Comercial
+        self.kva_comercial = KVA_ESTANDAR[-1] # Default al mayor
+        for k in KVA_ESTANDAR:
+            if k >= self.kva_requerido:
+                self.kva_comercial = k
+                break
+                
+        # 3. Eficiencia DOE
+        # Determinamos tabla según tipo
+        tabla_eff = DOE_2016_DRY_MV_3PH if self.tipo == "SECO" else DOE_2016_LIQUID_3PH
+        
+        # Interpolación simple o búsqueda directa (usamos directa para valores estándar)
+        # Si es un valor no estándar (ej. custom), usamos el más cercano inferior
+        eff_keys = sorted(tabla_eff.keys())
+        closest_k = eff_keys[0]
+        for k in eff_keys:
+            if k <= self.kva_comercial: closest_k = k
+            else: break
+        
+        self.eficiencia_doe = tabla_eff.get(closest_k, 98.0)
+        
+        # 4. Cargabilidad Final
+        if self.kva_comercial > 0:
+            self.cargabilidad = (self.kva_carga / self.kva_comercial) * 100
+        
+        # 5. Factor de Potencia y Pérdidas
+        # Estimación: Ploss = Pout * (1-eff)/eff
+        # Asumimos que la eficiencia DOE es al 50%. A plena carga las pérdidas suben (cuadrático).
+        # Modelo simplificado: Pérdidas Totales Estimadas = kW_Carga * (1 - Eff/100)
+        
+        eff_decimal = self.eficiencia_doe / 100.0
+        perdidas_kw = kw_load * (1 - eff_decimal) # Estimado en operación
+        
+        potencia_entrada_kw = kw_load + perdidas_kw
+        potencia_entrada_kva = math.sqrt(potencia_entrada_kw**2 + (kva_load * math.sin(math.acos(kw_load/kva_load)))**2) if kva_load > 0 else 0
+        
+        if potencia_entrada_kva > 0:
+            self.fp_entrada = potencia_entrada_kw / potencia_entrada_kva
+        else:
+            self.fp_entrada = 0.9 # Default
+            
+        # 6. Corrientes de Barraje (A capacidad nominal del Trafo)
+        self.i_pri_nom = (self.kva_comercial * 1000) / (math.sqrt(3) * self.voltaje_pri)
+        self.i_sec_nom = (self.kva_comercial * 1000) / (math.sqrt(3) * self.voltaje_sec)
+        
+        return {
+            "kVA_Com": self.kva_comercial,
+            "Eff": self.eficiencia_doe,
+            "Cargabilidad": self.cargabilidad,
+            "FP_Final": self.fp_entrada,
+            "I_Pri": self.i_pri_nom,
+            "I_Sec": self.i_sec_nom
+        }
+
 class Tablero:
     def __init__(self, nombre, voltaje, fases):
         self.nombre = nombre
@@ -172,9 +269,23 @@ class Tablero:
         self.circuitos = []
         self.sub_tableros = []
         self.kva_demandado = 0.0
+        self.kw_demandado = 0.0
+        self.trafo_asociado: Optional[Transformador] = None
     
     def agregar_c(self, c): self.circuitos.append(c)
     def agregar_s(self, t): self.sub_tableros.append(t)
+    
+    def calcular_carga_total(self):
+        tot_kva = 0.0
+        tot_kw = 0.0
+        for c in self.circuitos:
+            _, kw, kva = c.calcular_corriente_carga()
+            tot_kw += kw
+            tot_kva += kva
+        
+        self.kw_demandado = tot_kw
+        self.kva_demandado = tot_kva
+        return tot_kva, tot_kw
 
 # --- MEMORIA GLOBAL ---
 SISTEMA_PROYECTO = Tablero("Tablero General", 480, 3)
