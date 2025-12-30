@@ -113,6 +113,37 @@ class Circuito:
         }
         return self._res_conductor
 
+
+
+
+def _calcular_factor_temp_real(self):
+        """
+        Calcula F.T. basado en Tabla NEC 310.15(B)(2)(a) (Imagen provista).
+        Base 30°C, Aislamiento 90°C.
+        """
+        t = self.temp_ambiente
+        
+        # Rangos exactos de la tabla
+        if t <= 10: return 1.15
+        if t <= 15: return 1.12
+        if t <= 20: return 1.08
+        if t <= 25: return 1.04
+        if t <= 30: return 1.00 # Base
+        if t <= 35: return 0.96
+        if t <= 40: return 0.91
+        if t <= 45: return 0.87
+        if t <= 50: return 0.82
+        if t <= 55: return 0.76
+        if t <= 60: return 0.71
+        if t <= 65: return 0.65
+        if t <= 70: return 0.58
+        if t <= 75: return 0.50
+        if t <= 80: return 0.41
+        if t <= 85: return 0.29
+        
+        # Para temperaturas > 85°C según la tabla es 0.00
+        return 0.00
+
 @dataclass
 class Transformador:
     tipo: str; refrigeracion: str; reserva_deseada: float; voltaje_pri: float; voltaje_sec: float
