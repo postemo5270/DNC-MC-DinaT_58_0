@@ -1,5 +1,5 @@
 import ipywidgets as widgets
-from IPython.display import display, clear_output, HTML
+from IPython.display import display, clear_output
 import backend
 from backend import Circuito, Tablero, TipoInstalacion, TipoOperacion
 
@@ -24,7 +24,7 @@ btn_start = widgets.Button(description="INICIAR PROYECTO", button_style='primary
 def mostrar_inicio():
     with out_main:
         clear_output()
-        display(HTML("<h3>📂 1. CONFIGURACIÓN DEL PROYECTO</h3>"))
+        display(widgets.HTML("<h3>📂 1. CONFIGURACIÓN DEL PROYECTO</h3>"))
         display(txt_proy)
         display(btn_start)
 
@@ -43,7 +43,6 @@ btn_start.on_click(on_start)
 # =============================================================================
 txt_tbt_nom = widgets.Text(description="Nombre TBT:", placeholder="Ej: TBT-Principal", layout=style_full)
 drop_tbt_vol = widgets.Dropdown(options=[480, 440, 220, 208], description="Voltaje (V):", value=480, layout=style_full)
-# Botón redefinido para asegurar visibilidad
 btn_tbt_save = widgets.Button(description="GUARDAR TABLERO Y SEGUIR", button_style='success', icon='check', layout=style_btn)
 
 def mostrar_crear_tbt(tipo):
@@ -54,16 +53,17 @@ def mostrar_crear_tbt(tipo):
     color = "darkblue" if tipo == "PRINCIPAL" else "darkred"
     
     items = []
-    items.append(HTML(f"<h3 style='color:{color}'>{titulo}</h3>"))
+    # CORRECCIÓN: Usamos widgets.HTML en lugar de HTML puro
+    items.append(widgets.HTML(value=f"<h3 style='color:{color}'>{titulo}</h3>"))
     
     if tipo == "SUBORDINADO" and sesion["tbt_actual"]:
-        items.append(HTML(f"<b>Alimentado desde:</b> {sesion['tbt_actual'].nombre}"))
+        items.append(widgets.HTML(value=f"<b>Alimentado desde:</b> {sesion['tbt_actual'].nombre}"))
         
     items.append(txt_tbt_nom)
     items.append(drop_tbt_vol)
     items.append(btn_tbt_save)
     
-    # USAMOS VBOX: Esto obliga a que el botón viaje pegado al formulario
+    # Ahora sí funcionará el VBox porque todos los items son Widgets
     contenedor = widgets.VBox(items, layout=widgets.Layout(width='100%'))
     
     with out_main:
@@ -82,8 +82,8 @@ def on_tbt_save(b):
     
     mostrar_loop_cargas()
 
-# Re-vincular el evento por seguridad
-btn_tbt_save._click_handlers.callbacks = [] # Limpiar eventos viejos si existen
+# Vincular evento
+btn_tbt_save._click_handlers.callbacks = [] 
 btn_tbt_save.on_click(on_tbt_save)
 
 # =============================================================================
@@ -93,7 +93,7 @@ btn_tbt_save.on_click(on_tbt_save)
 txt_c_tag = widgets.Text(description="TAG:", placeholder="Ej: M-101", layout=widgets.Layout(width='30%'))
 txt_c_desc = widgets.Text(description="Desc:", placeholder="Ej: Bomba de Agua", layout=widgets.Layout(width='68%'))
 
-num_c_kw = widgets.FloatText(description="kW:", value=0.0, layout=widgets.Layout(width='32%')) # Inicia en 0
+num_c_kw = widgets.FloatText(description="kW:", value=0.0, layout=widgets.Layout(width='32%')) 
 drop_c_fases = widgets.Dropdown(options=[3, 2, 1], description="Fases:", value=3, layout=widgets.Layout(width='32%'))
 num_c_long = widgets.FloatText(description="Long(m):", value=0.0, layout=widgets.Layout(width='32%'))
 
@@ -119,20 +119,20 @@ def mostrar_loop_cargas():
     tbt = sesion["tbt_actual"]
     with out_main:
         clear_output()
-        display(HTML(f"<h3 style='background-color:#eee; padding:5px'>3. AGREGANDO CARGAS A: <span style='color:blue'>{tbt.nombre}</span></h3>"))
+        display(widgets.HTML(value=f"<h3 style='background-color:#eee; padding:5px'>3. AGREGANDO CARGAS A: <span style='color:blue'>{tbt.nombre}</span></h3>"))
         
         # Formulario
         display(widgets.HBox([txt_c_tag, txt_c_desc], layout=style_full))
         display(widgets.HBox([num_c_kw, drop_c_fases, num_c_long], layout=style_full))
-        display(HTML("<i>Factores de Corrección:</i>"))
+        display(widgets.HTML("<i>Factores de Corrección:</i>"))
         display(widgets.HBox([num_c_temp, num_c_agrup, num_c_eff], layout=style_full))
-        display(HTML("<i>Conductor e Instalación:</i>"))
+        display(widgets.HTML("<i>Conductor e Instalación:</i>"))
         display(widgets.HBox([drop_c_mat, drop_c_cal], layout=style_full))
         display(drop_c_inst)
         
         display(widgets.HBox([btn_add, btn_end_tbt], layout=style_full))
-        display(HTML("<hr>"))
-        display(out_tabla) # Aquí se verá la lista acumulada
+        display(widgets.HTML("<hr>"))
+        display(out_tabla) 
 
 def actualizar_tabla_visual():
     tbt = sesion["tbt_actual"]
@@ -144,11 +144,11 @@ def actualizar_tabla_visual():
     html += "</table>"
     with out_tabla:
         clear_output()
-        display(HTML(f"<b>Cargas Agregadas: {len(tbt.circuitos)}</b>"))
-        display(HTML(html))
+        display(widgets.HTML(f"<b>Cargas Agregadas: {len(tbt.circuitos)}</b>"))
+        display(widgets.HTML(html))
 
 def on_add_carga(b):
-    if num_c_kw.value <= 0: return # Validación básica
+    if num_c_kw.value <= 0: return 
     
     tbt = sesion["tbt_actual"]
     nc = Circuito(
@@ -157,15 +157,12 @@ def on_add_carga(b):
         factor_potencia=0.9, tipo_operacion=backend.TipoOperacion.CONTINUA,
         longitud_mts=num_c_long.value, calibre_usuario=drop_c_cal.value,
         material_conductor=drop_c_mat.value, tipo_instalacion=drop_c_inst.value,
-        # Nuevos campos
         eficiencia=num_c_eff.value, temp_ambiente=num_c_temp.value, factor_agrupamiento=num_c_agrup.value
     )
     
-    # Calcular antes de guardar para ver resultado rápido
     nc.ejecutar_seleccion_conductor()
     tbt.agregar_c(nc)
     
-    # Limpiar campos para la siguiente
     txt_c_tag.value = ""; txt_c_desc.value = ""; num_c_kw.value = 0.0
     actualizar_tabla_visual()
 
@@ -185,19 +182,19 @@ btn_dec_fin = widgets.Button(description="FINALIZAR TODO Y VER REPORTES", button
 def mostrar_decision():
     with out_main:
         clear_output()
-        display(HTML("<h3>✅ TABLERO COMPLETADO. ¿QUÉ SIGUE?</h3>"))
+        display(widgets.HTML("<h3>✅ TABLERO COMPLETADO. ¿QUÉ SIGUE?</h3>"))
         display(btn_dec_sub)
         display(btn_dec_new)
-        display(HTML("<hr>"))
+        display(widgets.HTML("<hr>"))
         display(btn_dec_fin)
 
 btn_dec_sub.on_click(lambda b: mostrar_crear_tbt("SUBORDINADO"))
 btn_dec_new.on_click(lambda b: mostrar_crear_tbt("PRINCIPAL"))
-btn_dec_fin.on_click(lambda b: display(HTML("<h3>🚀 PROCESO FINALIZADO. Ejecuta ModConds.</h3>")))
+btn_dec_fin.on_click(lambda b: display(widgets.HTML("<h3>🚀 PROCESO FINALIZADO. Ejecuta ModConds.</h3>")))
 
 # =============================================================================
 # INICIADOR
 # =============================================================================
 def iniciar_interfaz():
-    display(out_main) # <--- ESTA LÍNEA ES LA QUE HACE QUE SE VEA
+    display(out_main)
     mostrar_inicio()
