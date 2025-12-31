@@ -192,4 +192,5 @@ btn_dec_fin.on_click(lambda b: display(HTML("<h3>🚀 PROCESO FINALIZADO. Ejecut
 # INICIADOR
 # =============================================================================
 def iniciar_interfaz():
+    display(out_main) # <--- ESTA LÍNEA ES LA QUE HACE QUE SE VEA
     mostrar_inicio()
