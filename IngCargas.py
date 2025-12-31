@@ -43,7 +43,8 @@ btn_start.on_click(on_start)
 # =============================================================================
 txt_tbt_nom = widgets.Text(description="Nombre TBT:", placeholder="Ej: TBT-Principal", layout=style_full)
 drop_tbt_vol = widgets.Dropdown(options=[480, 440, 220, 208], description="Voltaje (V):", value=480, layout=style_full)
-btn_tbt_save = widgets.Button(description="CREAR Y AGREGAR CARGAS", button_style='success', icon='arrow-right', layout=style_btn)
+# Botón redefinido para asegurar visibilidad
+btn_tbt_save = widgets.Button(description="GUARDAR TABLERO Y SEGUIR", button_style='success', icon='check', layout=style_btn)
 
 def mostrar_crear_tbt(tipo):
     sesion["tipo_tbt"] = tipo
@@ -52,15 +53,22 @@ def mostrar_crear_tbt(tipo):
     titulo = "⚡ 2. NUEVO TABLERO PRINCIPAL" if tipo == "PRINCIPAL" else "↳ 2. NUEVO SUB-TABLERO"
     color = "darkblue" if tipo == "PRINCIPAL" else "darkred"
     
+    items = []
+    items.append(HTML(f"<h3 style='color:{color}'>{titulo}</h3>"))
+    
+    if tipo == "SUBORDINADO" and sesion["tbt_actual"]:
+        items.append(HTML(f"<b>Alimentado desde:</b> {sesion['tbt_actual'].nombre}"))
+        
+    items.append(txt_tbt_nom)
+    items.append(drop_tbt_vol)
+    items.append(btn_tbt_save)
+    
+    # USAMOS VBOX: Esto obliga a que el botón viaje pegado al formulario
+    contenedor = widgets.VBox(items, layout=widgets.Layout(width='100%'))
+    
     with out_main:
         clear_output()
-        display(HTML(f"<h3 style='color:{color}'>{titulo}</h3>"))
-        if tipo == "SUBORDINADO" and sesion["tbt_actual"]:
-            display(HTML(f"<b>Alimentado desde:</b> {sesion['tbt_actual'].nombre}"))
-            
-        display(txt_tbt_nom)
-        display(drop_tbt_vol)
-        display(btn_tbt_save)
+        display(contenedor)
 
 def on_tbt_save(b):
     if not txt_tbt_nom.value: return
@@ -72,11 +80,10 @@ def on_tbt_save(b):
     sesion["conteo_cargas"] = 0
     backend.MEMORIA_TABLEROS.append(nuevo_tbt)
     
-    # Si es subtablero, enlazar lógica (pendiente implementar enlace físico en backend)
-    # Por ahora solo lo creamos secuencialmente
-    
     mostrar_loop_cargas()
 
+# Re-vincular el evento por seguridad
+btn_tbt_save._click_handlers.callbacks = [] # Limpiar eventos viejos si existen
 btn_tbt_save.on_click(on_tbt_save)
 
 # =============================================================================
