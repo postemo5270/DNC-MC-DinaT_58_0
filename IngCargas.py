@@ -64,7 +64,7 @@ def ir_a_cargas():
     tbt = sesion["tbt_actual"]
     with out_main:
         clear_output()
-        display(widgets.HTML(f"<h3>3️⃣ CARGAS PARA: <span style='color:blue'>{tbt.nombre}</span></h3>"))
+        display(widgets.HBox([num_c_kw, drop_c_fases, num_c_long, num_c_temp], layout=widgets.Layout(width='100%')))
         
         # Formulario ancho
         display(widgets.HBox([txt_c_tag, txt_c_desc], layout=widgets.Layout(width='100%')))
@@ -98,6 +98,13 @@ num_c_long = widgets.FloatText(description="m:", value=10, layout=widgets.Layout
 drop_c_cal = widgets.Dropdown(options=backend.ORDEN_CALIBRES, description="Calibre:", value="12", layout=widgets.Layout(width='49%'))
 drop_c_mat = widgets.Dropdown(options=["CU", "AL"], description="Material:", value="CU", layout=widgets.Layout(width='49%'))
 
+# --- INSERCIÓN NUEVA: Widget de Temperatura ---
+num_c_temp = widgets.IntText(
+    description="Temp(°C):", 
+    value=30, 
+    layout=widgets.Layout(width='32%')
+)
+
 # LISTA COMPLETA DE INSTALACIONES
 drop_c_inst = widgets.Dropdown(
     options=[
@@ -127,6 +134,7 @@ def guardar_carga():
         factor_potencia=0.9, tipo_operacion=backend.TipoOperacion.CONTINUA, longitud_mts=num_c_long.value,
         calibre_usuario=drop_c_cal.value, material_conductor=drop_c_mat.value,
         tipo_instalacion=drop_c_inst.value
+        temp_ambiente=num_c_temp.value  # <--- ¡ESTA ES LA LÍNEA NUEVA!
     )
     backend.SISTEMA_PROYECTO.agregar_c(nc)
     res = nc.ejecutar_seleccion_conductor()
@@ -135,7 +143,8 @@ def guardar_carga():
         print(f"✅ {nc.tag} ({num_c_kw.value}kW) -> {res['N']}x{res['Calibre']} ({res['Nota']})")
     
     # Reset
-    txt_c_tag.value = ""; txt_c_desc.value = ""; num_c_kw.value = 0.0
+    # Reset
+    txt_c_tag.value = ""; txt_c_desc.value = ""; num_c_kw.value = 0.0; num_c_temp.value = 30
     return True
 
 def on_add(b): guardar_carga()
