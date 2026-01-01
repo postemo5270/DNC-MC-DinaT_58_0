@@ -1,73 +1,93 @@
+import pandas as pd
+from IPython.display import display, HTML
 import backend
-from backend import Circuito, Tablero, TipoInstalacion, TipoOperacion
 
-def cargar_demo():
-    print("🚧 CARGANDO DATOS EXACTOS DE 'ModConds.xlsx'...")
-    backend.MEMORIA_TABLEROS = []
+def obtener_factor_temp(t):
+    if 26 <= t <= 30: return 1.0
+    elif 31 <= t <= 35: return 0.96
+    elif 36 <= t <= 40: return 0.91
+    elif 41 <= t <= 45: return 0.87
+    elif 46 <= t <= 50: return 0.82
+    elif 51 <= t <= 60: return 0.71
+    elif t > 60: return 0.41
+    return 1.0
+
+def mostrar_reporte_conductores():
+    if not backend.MEMORIA_TABLEROS:
+        print("⚠️ No hay datos cargados en memoria.")
+        return
+
+    # Estilos CSS (Similar a Excel)
+    estilos = [
+        dict(selector="th", props=[("font-size", "11px"), ("text-align", "center"), ("background-color", "#2c3e50"), ("color", "white")]),
+        dict(selector="td", props=[("font-size", "11px"), ("text-align", "center")]),
+        dict(selector="tr:hover", props=[("background-color", "#ffff99")])
+    ]
     
-    # 1. ESTRUCTURA (Jerarquía)
-    # Según instrucciones: Definir primero la estructura.
-    t_main = Tablero("Tablero Principal 1", 480, 3)
-    t_sub = Tablero("Subtablero 1", 480, 3)
-    
-    # Enlace: Main alimenta a Sub
-    t_main.agregar_sub(t_sub)
+    # Formatos de número
+    formatos = {
+        "kW": "{:.1f}", "FP": "{:.2f}", "Eff": "{:.2f}", 
+        "I.Nom": "{:.1f}", "I.Dis": "{:.1f}", 
+        "F.Temp": "{:.2f}", "F.Agrup": "{:.2f}", 
+        "Cap.Real": "{:.1f}", "Caída(V)": "{:.2f}", "%Reg": "{:.2f}%"
+    }
 
-    # 2. CARGAS DEL SUBTABLERO (Datos del Excel)
-    # Tag: Carga sub 11 | 100kW | FP 0.79 | Eff 0.9024 | AL | Banco Ductos
-    c_sub_11 = Circuito(
-        tag="Carga sub 11",
-        descripcion="Motor Subtablero (Excel)",
-        potencia_nominal_kw=100.0,
-        voltaje=480,
-        fases=3,
-        factor_potencia=0.79,      # Dato específico Excel
-        eficiencia=0.9024,         # Dato específico Excel (aprox)
-        longitud_mts=100.0,
-        material_conductor="AL",   # Dato específico Excel
-        tipo_instalacion=TipoInstalacion.BANCO_DUCTOS, # Dato específico Excel
-        temp_ambiente=30,
-        tipo_operacion=TipoOperacion.CONTINUA
-    )
-    t_sub.agregar_c(c_sub_11)
-    c_sub_11.ejecutar_seleccion_conductor()
+    display(HTML("<h2>📊 REPORTE DE CÁLCULO (NEC) - DETALLE POR TABLERO</h2>"))
 
-    # 3. CARGAS DEL PRINCIPAL (Datos del Excel)
-    # Tag: Carga 21 | 100kW | FP 0.79 | Eff 0.9024 | AL | Banco Ductos
-    c_21 = Circuito(
-        tag="Carga 21",
-        descripcion="Carga Principal (Excel)",
-        potencia_nominal_kw=100.0,
-        voltaje=480,
-        fases=3,
-        factor_potencia=0.79,
-        eficiencia=0.9024,
-        longitud_mts=100.0,
-        material_conductor="AL",
-        tipo_instalacion=TipoInstalacion.BANCO_DUCTOS,
-        temp_ambiente=30,
-        tipo_operacion=TipoOperacion.CONTINUA
-    )
-    t_main.agregar_c(c_21)
-    c_21.ejecutar_seleccion_conductor()
+    # BUCLE PRINCIPAL: TABLERO POR TABLERO
+    for tbt in backend.MEMORIA_TABLEROS:
+        data_tbt = []
+        item_counter = 1
+        
+        # Calcular totales del tablero para el encabezado
+        total_kw = tbt.total_kw() 
+        
+        # Título del Tablero
+        display(HTML(f"<br><hr><h3 style='color:darkblue; margin-bottom:0px'>⚡ TABLERO: {tbt.nombre}</h3>"))
+        display(HTML(f"<i>Voltaje: {tbt.voltaje}V | Fases: {tbt.fases} | Carga Total Aprox: {total_kw:.1f} kW</i>"))
 
-    # 4. CARGA ALIMENTADOR (Calculada por la App)
-    kw_sub = t_sub.total_kw()
-    c_alim = Circuito(
-        tag="ALIM-SUB-1",
-        descripcion=f"Alimentador {t_sub.nombre}",
-        potencia_nominal_kw=kw_sub,
-        voltaje=480,
-        fases=3,
-        factor_potencia=0.95, 
-        longitud_mts=20.0,
-        material_conductor="CU",
-        tipo_instalacion=TipoInstalacion.BANDEJA
-    )
-    t_main.agregar_c(c_alim)
-    c_alim.ejecutar_seleccion_conductor()
+        if not tbt.circuitos:
+            display(HTML("<span style='color:gray'>Sim cargas registradas.</span>"))
+            continue
 
-    # Guardar
-    backend.MEMORIA_TABLEROS.extend([t_main, t_sub])
-    backend.SISTEMA_PROYECTO = t_main
-    print(f"✅ Datos cargados según ModConds.xlsx. Total Cargas: {len(t_sub.circuitos) + len(t_main.circuitos)}")
+        for c in tbt.circuitos:
+            # Asegurar cálculo actualizado
+            if not c._res_conductor: c.ejecutar_seleccion_conductor()
+            res = c._res_conductor
+            
+            f_temp = obtener_factor_temp(c.temp_ambiente)
+            
+            # Estado Alerta
+            estado = "OK"
+            if res['Reg_Pct'] > 3.0: estado = "⚠️ >3%"
+            if res['Nota']: estado += f" {res['Nota']}"
+
+            fila = {
+                "Item": item_counter,
+                "Tag": c.tag,
+                "Descripción": c.descripcion,
+                "kW": c.potencia_nominal_kw,
+                "FP": c.factor_potencia,
+                "Eff": c.eficiencia,
+                "I.Nom": res['I_Nominal'],
+                "I.Dis": res['I_Diseno'],
+                "T(°C)": c.temp_ambiente,
+                "F.Temp": f_temp,
+                "F.Agrup": c.factor_agrupamiento,
+                "Instalación": c.tipo_instalacion,
+                "Mat": c.material_conductor,
+                "Aisl": c.aislamiento,
+                "Tierra": res['Tierra'],
+                "Fase (Config)": res['Config'].split('+')[0], # Solo parte fase
+                "Cap.Real": res['Amp_Real'],
+                "L(m)": c.longitud_mts,
+                "Caída(V)": res['V_Caida'],
+                "%Reg": res['Reg_Pct'],
+                "Estado": estado
+            }
+            data_tbt.append(fila)
+            item_counter += 1
+        
+        # Crear DataFrame de ESTE tablero
+        df = pd.DataFrame(data_tbt)
+        display(df.style.set_table_styles(estilos).format(formatos).hide(axis="index"))
