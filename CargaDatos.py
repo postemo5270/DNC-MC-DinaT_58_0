@@ -13,7 +13,6 @@ def cargar_demo():
     t_main.agregar_sub(t_sub)
 
     # 2. CARGAS DEL SUBTABLERO (Datos del Excel)
-    # Tag: Carga sub 11 | 100kW | FP 0.79 | Eff 0.9024 | AL | Banco Ductos
     c_sub_11 = Circuito(
         tag="Carga sub 11",
         descripcion="Motor Subtablero (Excel)",
@@ -29,10 +28,11 @@ def cargar_demo():
         tipo_operacion=TipoOperacion.CONTINUA
     )
     t_sub.agregar_c(c_sub_11)
+    
+    # Calcular
     c_sub_11.ejecutar_seleccion_conductor()
 
     # 3. CARGAS DEL PRINCIPAL (Datos del Excel)
-    # Tag: Carga 21 | 100kW | FP 0.79 | Eff 0.9024 | AL | Banco Ductos
     c_21 = Circuito(
         tag="Carga 21",
         descripcion="Carga Principal (Excel)",
@@ -48,9 +48,11 @@ def cargar_demo():
         tipo_operacion=TipoOperacion.CONTINUA
     )
     t_main.agregar_c(c_21)
+    
+    # Calcular
     c_21.ejecutar_seleccion_conductor()
 
-    # 4. CARGA ALIMENTADOR (Calculada por la App)
+    # 4. CARGA ALIMENTADOR (Calculada Automáticamente)
     kw_sub = t_sub.total_kw()
     c_alim = Circuito(
         tag="ALIM-SUB-1",
@@ -66,7 +68,10 @@ def cargar_demo():
     t_main.agregar_c(c_alim)
     c_alim.ejecutar_seleccion_conductor()
 
-    # Guardar
+    # Guardar en memoria para reporte
     backend.MEMORIA_TABLEROS.extend([t_main, t_sub])
     backend.SISTEMA_PROYECTO = t_main
-    print(f"✅ Datos cargados según ModConds.xlsx. Total Cargas: {len(t_sub.circuitos) + len(t_main.circuitos)}")
+    
+    print(f"✅ Datos cargados correctamente.")
+    print(f"   -> {t_sub.nombre}: {len(t_sub.circuitos)} circuitos")
+    print(f"   -> {t_main.nombre}: {len(t_main.circuitos)} circuitos")
