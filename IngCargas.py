@@ -1,201 +1,155 @@
 import ipywidgets as widgets
 from IPython.display import display, clear_output
 import backend
-from backend import Circuito, Tablero, TipoInstalacion, TipoOperacion
+from backend import Circuito, Tablero, TipoInstalacion
 
 # =============================================================================
-# INTERFAZ DE INGRESO DE CARGAS - FLUJO BLINDADO (VBOX TOTAL)
+# INTERFAZ AJUSTADA A COLUMNAS ModConds.xlsx
 # =============================================================================
 
-# --- ESTILOS Y VARIABLES ---
-sesion = { "tbt_actual": None, "conteo_cargas": 0 }
+sesion = { "tbt_actual": None, "padres_disponibles": [] }
 style_full = widgets.Layout(width='98%', margin='5px 0')
 style_half = widgets.Layout(width='48%', margin='5px')
-style_btn = widgets.Layout(width='98%', margin='15px 0')
-
 out_main = widgets.Output()
 
-# =============================================================================
-# 1. PANTALLA INICIO (PROYECTO)
-# =============================================================================
-txt_proy = widgets.Text(description="Proyecto:", placeholder="Nombre del Proyecto...", layout=style_full)
-btn_start = widgets.Button(description="INICIAR PROYECTO", button_style='primary', icon='play', layout=style_btn)
+# 1. PANTALLA INICIO
+txt_proy = widgets.Text(description="Proyecto:", layout=style_full)
+btn_start = widgets.Button(description="INICIAR PROYECTO", button_style='primary', layout=style_full)
 
 def mostrar_inicio():
-    # EMPAQUETADO EN VBOX
-    items = []
-    items.append(widgets.HTML(value="<h3>📂 1. CONFIGURACIÓN DEL PROYECTO</h3>"))
-    items.append(txt_proy)
-    items.append(btn_start)
-    contenedor = widgets.VBox(items, layout=widgets.Layout(width='100%'))
-
     with out_main:
         clear_output()
-        display(contenedor)
+        display(widgets.VBox([widgets.HTML("<h3>📂 PROYECTO NUEVO</h3>"), txt_proy, btn_start]))
 
 def on_start(b):
     if not txt_proy.value: return
-    # Reiniciar Memoria Global
     backend.MEMORIA_TABLEROS = []
-    backend.SISTEMA_PROYECTO = backend.Tablero(txt_proy.value, 480, 3)
-    mostrar_crear_tbt("PRINCIPAL")
+    sesion["padres_disponibles"] = [] # Lista de nombres de tableros creados
+    mostrar_crear_tbt()
 
 btn_start.on_click(on_start)
 
-# =============================================================================
-# 2. PANTALLA CREAR TABLERO
-# =============================================================================
-txt_tbt_nom = widgets.Text(description="Nombre TBT:", placeholder="Ej: TBT-Principal", layout=style_full)
-drop_tbt_vol = widgets.Dropdown(options=[480, 440, 220, 208], description="Voltaje (V):", value=480, layout=style_full)
-btn_tbt_save = widgets.Button(description="GUARDAR TABLERO Y SEGUIR", button_style='success', icon='check', layout=style_btn)
+# 2. PANTALLA CREAR TABLERO (Jerarquía Primero)
+txt_tbt_nom = widgets.Text(description="Nombre TBT:", placeholder="Ej: Tablero Principal 1", layout=style_full)
+drop_padre = widgets.Dropdown(options=["NINGUNO (PRINCIPAL)"], description="Se alimenta de:", layout=style_full)
+btn_tbt_ok = widgets.Button(description="CREAR Y AGREGAR CARGAS", button_style='success', layout=style_full)
 
-def mostrar_crear_tbt(tipo):
-    sesion["tipo_tbt"] = tipo
-    txt_tbt_nom.value = "" # Limpiar
-    
-    titulo = "⚡ 2. NUEVO TABLERO PRINCIPAL" if tipo == "PRINCIPAL" else "↳ 2. NUEVO SUB-TABLERO"
-    color = "darkblue" if tipo == "PRINCIPAL" else "darkred"
-    
-    # EMPAQUETADO EN VBOX
-    items = []
-    items.append(widgets.HTML(value=f"<h3 style='color:{color}'>{titulo}</h3>"))
-    if tipo == "SUBORDINADO" and sesion["tbt_actual"]:
-        items.append(widgets.HTML(value=f"<b>Alimentado desde:</b> {sesion['tbt_actual'].nombre}"))
-        
-    items.append(txt_tbt_nom)
-    items.append(drop_tbt_vol)
-    items.append(btn_tbt_save)
-    contenedor = widgets.VBox(items, layout=widgets.Layout(width='100%'))
+def mostrar_crear_tbt():
+    # Actualizar lista de padres posibles
+    opciones = ["NINGUNO (PRINCIPAL)"] + sesion["padres_disponibles"]
+    drop_padre.options = opciones
+    txt_tbt_nom.value = ""
     
     with out_main:
         clear_output()
-        display(contenedor)
+        display(widgets.VBox([
+            widgets.HTML("<h3>⚡ DEFINIR ESTRUCTURA DE TABLERO</h3>"),
+            widgets.HTML("<i>Ingrese primero Subtableros si desea calcular Alimentadores auto.</i>"),
+            txt_tbt_nom, drop_padre, btn_tbt_ok
+        ]))
 
 def on_tbt_save(b):
     if not txt_tbt_nom.value: return
-    nuevo_tbt = Tablero(txt_tbt_nom.value, drop_tbt_vol.value, 3)
-    sesion["tbt_actual"] = nuevo_tbt
-    sesion["conteo_cargas"] = 0
-    backend.MEMORIA_TABLEROS.append(nuevo_tbt)
-    mostrar_loop_cargas()
+    nuevo = Tablero(txt_tbt_nom.value, 480, 3)
+    
+    padre_sel = drop_padre.value
+    if padre_sel != "NINGUNO (PRINCIPAL)":
+        # Buscar objeto padre (Simplificado por nombre)
+        for t in backend.MEMORIA_TABLEROS:
+            if t.nombre == padre_sel:
+                t.agregar_sub(nuevo)
+                break
+    
+    backend.MEMORIA_TABLEROS.append(nuevo)
+    sesion["padres_disponibles"].append(nuevo.nombre)
+    sesion["tbt_actual"] = nuevo
+    mostrar_cargas()
 
-# Vincular evento (limpiando anteriores por seguridad)
-btn_tbt_save._click_handlers.callbacks = [] 
-btn_tbt_save.on_click(on_tbt_save)
+btn_tbt_ok.on_click(on_tbt_save)
 
-# =============================================================================
-# 3. PANTALLA LOOP DE CARGAS (LA FÁBRICA)
-# =============================================================================
-txt_c_tag = widgets.Text(description="TAG:", placeholder="Ej: M-101", layout=widgets.Layout(width='30%'))
-txt_c_desc = widgets.Text(description="Desc:", placeholder="Ej: Bomba de Agua", layout=widgets.Layout(width='68%'))
-num_c_kw = widgets.FloatText(description="kW:", value=0.0, layout=widgets.Layout(width='32%')) 
-drop_c_fases = widgets.Dropdown(options=[3, 2, 1], description="Fases:", value=3, layout=widgets.Layout(width='32%'))
-num_c_long = widgets.FloatText(description="Long(m):", value=0.0, layout=widgets.Layout(width='32%'))
+# 3. PANTALLA CARGAS (Campos ModConds)
+# Campos inputs según tu Excel
+txt_tag = widgets.Text(description="Tag:", placeholder="Ej: Carga sub 11", layout=widgets.Layout(width='30%'))
+txt_desc = widgets.Text(description="Desc:", layout=widgets.Layout(width='68%'))
+num_kw = widgets.FloatText(description="kW:", layout=widgets.Layout(width='30%'))
+num_fp = widgets.FloatText(description="F.P.:", value=0.79, step=0.01, layout=widgets.Layout(width='30%')) # CAMPO NUEVO
+num_eff = widgets.FloatText(description="Eff:", value=0.90, step=0.01, layout=widgets.Layout(width='30%'))
+num_len = widgets.FloatText(description="Long(m):", value=100.0, layout=widgets.Layout(width='30%'))
 
-num_c_eff = widgets.BoundedFloatText(description="Eff (η):", value=0.90, min=0.1, max=1.0, step=0.01, layout=widgets.Layout(width='32%'))
-num_c_temp = widgets.IntSlider(description="Temp(°C)", value=30, min=10, max=80, step=1, layout=widgets.Layout(width='32%'))
-num_c_agrup = widgets.FloatSlider(description="F.Agrup", value=1.0, min=0.5, max=1.0, step=0.05, layout=widgets.Layout(width='32%'))
+drop_mat = widgets.Dropdown(options=["CU", "AL"], description="Material:", value="AL", layout=widgets.Layout(width='30%'))
+drop_aisl = widgets.Dropdown(options=["THHN", "XHHW-2"], description="Aisl:", value="THHN", layout=widgets.Layout(width='30%')) # CAMPO NUEVO
+drop_inst = widgets.Dropdown(options=[
+    ("Banco Ductos", TipoInstalacion.BANCO_DUCTOS),
+    ("Bandeja", TipoInstalacion.BANDEJA),
+    ("Ducto", TipoInstalacion.DUCTO)
+], description="Inst:", value=TipoInstalacion.BANCO_DUCTOS, layout=style_full)
 
-drop_c_cal = widgets.Dropdown(options=backend.ORDEN_CALIBRES, description="Sugerido:", value="12", layout=widgets.Layout(width='49%'))
-drop_c_mat = widgets.Dropdown(options=["CU", "AL"], description="Material:", value="CU", layout=widgets.Layout(width='49%'))
-drop_c_inst = widgets.Dropdown(
-    options=[("Ducto (PVC/IMC)", backend.TipoInstalacion.DUCTO), ("Bandeja", backend.TipoInstalacion.BANDEJA), 
-             ("Banco Ductos", backend.TipoInstalacion.BANCO_DUCTOS), ("Aire Libre", backend.TipoInstalacion.AIRE)],
-    description="Instal:", value=backend.TipoInstalacion.DUCTO, layout=style_full
-)
+btn_add = widgets.Button(description="AGREGAR CARGA", button_style='info', layout=style_half)
+btn_fin = widgets.Button(description="TERMINAR TABLERO", button_style='warning', layout=style_half)
+out_list = widgets.Output()
 
-btn_add = widgets.Button(description="AGREGAR CARGA (+)", button_style='info', layout=style_half)
-btn_end_tbt = widgets.Button(description="FINALIZAR TABLERO", button_style='warning', layout=style_half)
-out_tabla = widgets.Output()
-
-def mostrar_loop_cargas():
+def mostrar_cargas():
     tbt = sesion["tbt_actual"]
-    
-    # EMPAQUETADO EN VBOX
-    items = []
-    items.append(widgets.HTML(value=f"<h3 style='background-color:#eee; padding:5px'>3. AGREGANDO CARGAS A: <span style='color:blue'>{tbt.nombre}</span></h3>"))
-    
-    # Filas del formulario
-    items.append(widgets.HBox([txt_c_tag, txt_c_desc], layout=style_full))
-    items.append(widgets.HBox([num_c_kw, drop_c_fases, num_c_long], layout=style_full))
-    items.append(widgets.HTML(value="<i>Factores de Corrección:</i>"))
-    items.append(widgets.HBox([num_c_temp, num_c_agrup, num_c_eff], layout=style_full))
-    items.append(widgets.HTML(value="<i>Conductor e Instalación:</i>"))
-    items.append(widgets.HBox([drop_c_mat, drop_c_cal], layout=style_full))
-    items.append(drop_c_inst)
-    items.append(widgets.HBox([btn_add, btn_end_tbt], layout=style_full))
-    items.append(widgets.HTML(value="<hr>"))
-    items.append(out_tabla) # Tabla viva
-    
-    contenedor = widgets.VBox(items, layout=widgets.Layout(width='100%'))
-    
     with out_main:
         clear_output()
-        display(contenedor)
+        display(widgets.HTML(f"<h3>📝 INGRESANDO CARGAS A: <b style='color:blue'>{tbt.nombre}</b></h3>"))
+        
+        # Fila 1: Identificación
+        display(widgets.HBox([txt_tag, txt_desc], layout=style_full))
+        # Fila 2: Eléctricos (kW, FP, Eff)
+        display(widgets.HBox([num_kw, num_fp, num_eff], layout=style_full))
+        # Fila 3: Físicos
+        display(widgets.HBox([num_len, drop_mat, drop_aisl], layout=style_full))
+        # Fila 4: Instalación
+        display(drop_inst)
+        
+        display(widgets.HBox([btn_add, btn_fin], layout=style_full))
+        display(out_list)
 
-def actualizar_tabla_visual():
-    tbt = sesion["tbt_actual"]
-    html = "<table style='width:100%; border-collapse:collapse; font-size:12px'>"
-    html += "<tr style='background:#ccc'><th>Tag</th><th>Desc</th><th>kW</th><th>Cable</th></tr>"
-    for c in tbt.circuitos:
-        res = c._res_conductor if c._res_conductor else {"Config": "Pendiente"}
-        html += f"<tr><td>{c.tag}</td><td>{c.descripcion}</td><td>{c.potencia_nominal_kw}</td><td>{res.get('Config','?')}</td></tr>"
-    html += "</table>"
-    with out_tabla:
-        clear_output()
-        display(widgets.HTML(value=f"<b>Cargas Agregadas: {len(tbt.circuitos)}</b>"))
-        display(widgets.HTML(value=html))
-
-def on_add_carga(b):
-    if num_c_kw.value <= 0: return 
-    tbt = sesion["tbt_actual"]
+def on_add(b):
+    if num_kw.value <= 0: return
+    t = sesion["tbt_actual"]
     nc = Circuito(
-        tag=txt_c_tag.value, descripcion=txt_c_desc.value,
-        potencia_nominal_kw=num_c_kw.value, voltaje=tbt.voltaje, fases=drop_c_fases.value,
-        factor_potencia=0.9, tipo_operacion=backend.TipoOperacion.CONTINUA,
-        longitud_mts=num_c_long.value, calibre_usuario=drop_c_cal.value,
-        material_conductor=drop_c_mat.value, tipo_instalacion=drop_c_inst.value,
-        eficiencia=num_c_eff.value, temp_ambiente=num_c_temp.value, factor_agrupamiento=num_c_agrup.value
+        tag=txt_tag.value, descripcion=txt_desc.value,
+        potencia_nominal_kw=num_kw.value, voltaje=t.voltaje, fases=3,
+        factor_potencia=num_fp.value,  # Usar input usuario
+        eficiencia=num_eff.value,
+        longitud_mts=num_len.value,
+        material_conductor=drop_mat.value,
+        aislamiento=drop_aisl.value,
+        tipo_instalacion=drop_inst.value,
+        tipo_operacion=backend.TipoOperacion.CONTINUA
     )
-    nc.ejecutar_seleccion_conductor()
-    tbt.agregar_c(nc)
-    txt_c_tag.value = ""; txt_c_desc.value = ""; num_c_kw.value = 0.0
-    actualizar_tabla_visual()
+    t.agregar_c(nc)
+    res = nc.ejecutar_seleccion_conductor()
+    
+    with out_list:
+        print(f"✅ {nc.tag} ({nc.potencia_nominal_kw}kW) -> {res['Config']}")
+    
+    # Reset basico
+    txt_tag.value = ""; num_kw.value = 0.0
 
-def on_end_tbt(b):
+def on_fin(b):
     mostrar_decision()
 
-btn_add.on_click(on_add_carga)
-btn_end_tbt.on_click(on_end_tbt)
+btn_add.on_click(on_add)
+btn_fin.on_click(on_fin)
 
-# =============================================================================
-# 4. PANTALLA DECISIÓN
-# =============================================================================
-btn_dec_sub = widgets.Button(description="AGREGAR SUB-TABLERO", button_style='info', layout=style_btn)
-btn_dec_new = widgets.Button(description="OTRO TABLERO PRINCIPAL", button_style='primary', layout=style_btn)
-btn_dec_fin = widgets.Button(description="FINALIZAR TODO Y VER REPORTES", button_style='danger', layout=style_btn)
+# 4. DECISIÓN
+btn_new_tbt = widgets.Button(description="CREAR OTRO TABLERO", button_style='primary', layout=style_full)
+btn_end_all = widgets.Button(description="FINALIZAR PROYECTO", button_style='danger', layout=style_full)
 
 def mostrar_decision():
-    # EMPAQUETADO EN VBOX
-    items = []
-    items.append(widgets.HTML(value="<h3>✅ TABLERO COMPLETADO. ¿QUÉ SIGUE?</h3>"))
-    items.append(btn_dec_sub)
-    items.append(btn_dec_new)
-    items.append(widgets.HTML(value="<hr>"))
-    items.append(btn_dec_fin)
-    contenedor = widgets.VBox(items, layout=widgets.Layout(width='100%'))
-
     with out_main:
         clear_output()
-        display(contenedor)
+        display(widgets.VBox([
+            widgets.HTML("<h3>¿Qué sigue?</h3>"),
+            btn_new_tbt, btn_end_all
+        ]))
 
-btn_dec_sub.on_click(lambda b: mostrar_crear_tbt("SUBORDINADO"))
-btn_dec_new.on_click(lambda b: mostrar_crear_tbt("PRINCIPAL"))
-btn_dec_fin.on_click(lambda b: display(widgets.HTML(value="<h3>🚀 PROCESO FINALIZADO. Ejecuta ModConds.</h3>")))
+btn_new_tbt.on_click(lambda b: mostrar_crear_tbt())
+btn_end_all.on_click(lambda b: display(widgets.HTML("<h3>✅ FIN. Ejecute ModConds para ver reporte.</h3>")))
 
-# =============================================================================
-# INICIADOR
-# =============================================================================
 def iniciar_interfaz():
     display(out_main)
     mostrar_inicio()
