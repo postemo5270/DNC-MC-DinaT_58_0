@@ -1,184 +1,274 @@
 import math
-from dataclasses import dataclass, field
-from enum import Enum
-from typing import List, Dict, Optional
+
+# --- CONSTANTES Y TABLAS NEC ---
+
+# Tabla 310.15(B)(16) (Ahora 310.16 en NEC 2020/2023) - 75°C y 90°C
+# Formato: "Calibre": (Amp_75C, Amp_90C)
+TABLA_310_16_CU = {
+    "14": (20, 25), "12": (25, 30), "10": (35, 40), "8": (50, 55),
+    "6": (65, 75), "4": (85, 95), "3": (100, 115), "2": (115, 130),
+    "1": (130, 145), "1/0": (150, 170), "2/0": (175, 195),
+    "3/0": (200, 225), "4/0": (230, 260), "250": (255, 290),
+    "300": (285, 320), "350": (310, 350), "500": (380, 430),
+    "600": (420, 475), "750": (475, 535)
+}
+
+TABLA_310_16_AL = {
+    "12": (20, 25), "10": (30, 35), "8": (40, 45), "6": (50, 55),
+    "4": (65, 75), "3": (75, 85), "2": (90, 100), "1": (100, 115),
+    "1/0": (120, 135), "2/0": (135, 150), "3/0": (155, 175),
+    "4/0": (180, 205), "250": (205, 230), "300": (230, 255),
+    "350": (250, 280), "500": (310, 350), "600": (340, 385),
+    "750": (385, 435)
+}
+
+# Tabla 250.122 - Conductor de Puesta a Tierra (Min Size GND)
+# Basado en el Rating del Breaker (Amperios) -> Calibre AWG/kcmil (Cobre, Aluminio)
+TABLA_250_122 = [
+    (15, "14", "12"), (20, "12", "10"), (60, "10", "8"), (100, "8", "6"),
+    (200, "6", "4"), (300, "4", "2"), (400, "3", "1"), (500, "2", "1/0"),
+    (600, "1", "2/0"), (800, "1/0", "3/0"), (1000, "2/0", "4/0"),
+    (1200, "3/0", "250"), (1600, "4/0", "350"), (2000, "250", "400"),
+    (2500, "350", "600"), (3000, "400", "600"), (4000, "500", "800"),
+    (5000, "700", "1200"), (6000, "800", "1200")
+]
+
+ORDEN_CALIBRES = ["14", "12", "10", "8", "6", "4", "3", "2", "1", 
+                  "1/0", "2/0", "3/0", "4/0", "250", "300", "350", "500", "600", "750"]
+
+# Datos Físicos (Resistencia/Reactancia aprox NEC Cap 9 Tabla 8 y 9)
+# R_Ohm/km a 75C aprox para tubería acero (peor caso)
+DATOS_FISICOS = {
+    "14": {"r_cu": 10.2, "x_cu": 0.19, "r_al": 16.7, "x_al": 0.19},
+    "12": {"r_cu": 6.6, "x_cu": 0.18, "r_al": 10.8, "x_al": 0.18},
+    "10": {"r_cu": 3.9, "x_cu": 0.16, "r_al": 6.4, "x_al": 0.16},
+    "8":  {"r_cu": 2.56, "x_cu": 0.17, "r_al": 4.2, "x_al": 0.17},
+    "6":  {"r_cu": 1.61, "x_cu": 0.16, "r_al": 2.66, "x_al": 0.16},
+    "4":  {"r_cu": 1.02, "x_cu": 0.15, "r_al": 1.67, "x_al": 0.15},
+    "3":  {"r_cu": 0.82, "x_cu": 0.15, "r_al": 1.35, "x_al": 0.15},
+    "2":  {"r_cu": 0.62, "x_cu": 0.14, "r_al": 1.05, "x_al": 0.14},
+    "1":  {"r_cu": 0.51, "x_cu": 0.14, "r_al": 0.82, "x_al": 0.14},
+    "1/0": {"r_cu": 0.39, "x_cu": 0.13, "r_al": 0.66, "x_al": 0.13},
+    "2/0": {"r_cu": 0.31, "x_cu": 0.13, "r_al": 0.52, "x_al": 0.13},
+    "3/0": {"r_cu": 0.25, "x_cu": 0.12, "r_al": 0.43, "x_al": 0.12},
+    "4/0": {"r_cu": 0.20, "x_cu": 0.12, "r_al": 0.33, "x_al": 0.12},
+    "250": {"r_cu": 0.17, "x_cu": 0.12, "r_al": 0.28, "x_al": 0.12},
+    "300": {"r_cu": 0.14, "x_cu": 0.11, "r_al": 0.23, "x_al": 0.11},
+    "350": {"r_cu": 0.12, "x_cu": 0.11, "r_al": 0.20, "x_al": 0.11},
+    "500": {"r_cu": 0.089, "x_cu": 0.11, "r_al": 0.14, "x_al": 0.11},
+    "600": {"r_cu": 0.075, "x_cu": 0.11, "r_al": 0.12, "x_al": 0.11},
+    "750": {"r_cu": 0.062, "x_cu": 0.11, "r_al": 0.10, "x_al": 0.11},
+}
+
+# --- ENUMS ---
+class TipoInstalacion:
+    DUCTO = "Ducto"
+    BANDEJA = "Bandeja"
+    AIRE = "Aire Libre"
+    BANCO_DUCTOS = "Banco de Ductos"
+    TRENZADA = "Red Trenzada"
+    AGRUP = "Agrupado"
+    ENTER = "Enterrado Directo"
+
+class TipoOperacion:
+    CONTINUA = "Continua" # >= 3 horas (125%)
+    NO_CONTINUA = "No Continua" # (100%)
+    RESPALDO = "Respaldo/Standby"
 
 # --- MEMORIA GLOBAL ---
-MEMORIA_TABLEROS = [] 
+MEMORIA_TABLEROS = []
+SISTEMA_PROYECTO = None
 
-# --- TABLAS REFERENCIA ---
-ORDEN_CALIBRES = ["12", "10", "8", "6", "4", "2", "1/0", "2/0", "3/0", "4/0", "250", "350", "500", "750", "1000"]
-
-# Eficiencias DOE 2016
-DOE_2016_LIQUID_3PH = {15: 98.65, 30: 98.93, 45: 99.03, 75: 99.19, 112.5: 99.25, 150: 99.28, 225: 99.33, 300: 99.36, 500: 99.42, 750: 99.46, 1000: 99.49, 1500: 99.52, 2000: 99.55, 2500: 99.57}
-DOE_2016_DRY_MV_3PH = {15: 97.50, 30: 97.90, 45: 98.10, 75: 98.33, 112.5: 98.52, 150: 98.65, 225: 98.75, 300: 98.83, 500: 98.94, 750: 99.03, 1000: 99.08, 1500: 99.14, 2000: 99.18, 2500: 99.22}
-KVA_ESTANDAR = sorted(list(DOE_2016_LIQUID_3PH.keys()))
-
-# Base de Datos Cables (Ampacidad Base a 30°C)
-BD_CABLES_CU = {"12": {"A_DUCTO": 30, "A_AIRE": 40, "R": 6.6, "X": 0.177}, "10": {"A_DUCTO": 40, "A_AIRE": 55, "R": 3.9, "X": 0.164}, "8": {"A_DUCTO": 55, "A_AIRE": 80, "R": 2.56, "X": 0.171}, "6": {"A_DUCTO": 75, "A_AIRE": 105, "R": 1.61, "X": 0.167}, "4": {"A_DUCTO": 95, "A_AIRE": 140, "R": 1.02, "X": 0.157}, "2": {"A_DUCTO": 130, "A_AIRE": 190, "R": 0.62, "X": 0.148}, "1/0": {"A_DUCTO": 170, "A_AIRE": 260, "R": 0.39, "X": 0.141}, "2/0": {"A_DUCTO": 195, "A_AIRE": 300, "R": 0.33, "X": 0.141}, "3/0": {"A_DUCTO": 225, "A_AIRE": 350, "R": 0.26, "X": 0.138}, "4/0": {"A_DUCTO": 260, "A_AIRE": 405, "R": 0.21, "X": 0.135}, "250": {"A_DUCTO": 290, "A_AIRE": 455, "R": 0.179, "X": 0.139}, "350": {"A_DUCTO": 350, "A_AIRE": 570, "R": 0.129, "X": 0.099}, "500": {"A_DUCTO": 430, "A_AIRE": 700, "R": 0.093, "X": 0.069}, "750": {"A_DUCTO": 535, "A_AIRE": 855, "R": 0.06, "X": 0.118}, "1000": {"A_DUCTO": 615, "A_AIRE": 1055, "R": 0.04, "X": 0.115}}
-BD_CABLES_AL = {"12": {"A_DUCTO": 25, "A_AIRE": 35, "R": 10.49, "X": 0.177}, "10": {"A_DUCTO": 35, "A_AIRE": 40, "R": 6.56, "X": 0.164}, "8": {"A_DUCTO": 45, "A_AIRE": 60, "R": 4.27, "X": 0.171}, "6": {"A_DUCTO": 60, "A_AIRE": 80, "R": 2.66, "X": 0.167}, "4": {"A_DUCTO": 75, "A_AIRE": 115, "R": 1.67, "X": 0.157}, "2": {"A_DUCTO": 100, "A_AIRE": 150, "R": 1.05, "X": 0.148}, "1/0": {"A_DUCTO": 135, "A_AIRE": 205, "R": 0.66, "X": 0.141}, "2/0": {"A_DUCTO": 150, "A_AIRE": 235, "R": 0.52, "X": 0.138}, "3/0": {"A_DUCTO": 175, "A_AIRE": 275, "R": 0.42, "X": 0.135}, "4/0": {"A_DUCTO": 205, "A_AIRE": 315, "R": 0.33, "X": 0.131}, "250": {"A_DUCTO": 230, "A_AIRE": 355, "R": 0.28, "X": 0.128}, "350": {"A_DUCTO": 280, "A_AIRE": 445, "R": 0.21, "X": 0.125}, "500": {"A_DUCTO": 350, "A_AIRE": 545, "R": 0.14, "X": 0.121}, "750": {"A_DUCTO": 435, "A_AIRE": 700, "R": 0.09, "X": 0.118}, "1000": {"A_DUCTO": 500, "A_AIRE": 845, "R": 0.06, "X": 0.115}}
-
-class TipoOperacion(Enum):
-    CONTINUA = "C"; RESPALDO = "R"
-class TipoInstalacion(Enum):
-    DUCTO = "DUCTO"; AIRE = "AIRE"; AGRUP = "AGRUP"; BANDEJA = "BANDEJA"; BANCO_DUCTOS = "BANCO"; TRENZADA = "RED TRENZADA"
-
-@dataclass
+# --- CLASES ---
 class Circuito:
-    tag: str; descripcion: str; potencia_nominal_kw: float; voltaje: float; fases: int; factor_potencia: float
-    tipo_operacion: TipoOperacion; longitud_mts: float; calibre_usuario: str; material_conductor: str; tipo_instalacion: TipoInstalacion
-    factor_utilizacion: float = 1.0; tiene_vfd: bool = False; tiene_sut: bool = False
-    
-    # Nuevos atributos para detalle
-    eficiencia: float = 1.0 
-    temp_ambiente: float = 30.0 # Grados C
-    factor_agrupamiento: float = 1.0
-    
-    MAX_CAIDA: float = 3.0
-    _res_conductor: dict = field(default_factory=dict)
+    def __init__(self, tag, descripcion, potencia_nominal_kw, voltaje, fases, 
+                 factor_potencia=0.9, tipo_operacion=TipoOperacion.CONTINUA, 
+                 longitud_mts=10.0, calibre_usuario="12", material_conductor="CU",
+                 tipo_instalacion=TipoInstalacion.DUCTO,
+                 eficiencia=1.0, temp_ambiente=30, factor_agrupamiento=1.0,
+                 aislamiento="THHN/THWN-2"):
+        
+        # Datos Entrada Usuario
+        self.tag = tag
+        self.descripcion = descripcion
+        self.potencia_nominal_kw = float(potencia_nominal_kw)
+        self.voltaje = int(voltaje)
+        self.fases = int(fases)
+        self.factor_potencia = float(factor_potencia)
+        self.tipo_operacion = tipo_operacion
+        self.longitud_mts = float(longitud_mts)
+        self.calibre_usuario = calibre_usuario
+        self.material_conductor = material_conductor.upper()
+        self.tipo_instalacion = tipo_instalacion
+        self.eficiencia = float(eficiencia)
+        self.temp_ambiente = int(temp_ambiente)
+        self.factor_agrupamiento = float(factor_agrupamiento)
+        self.aislamiento = aislamiento
 
-    def calcular_corriente_carga(self):
-        # Asumimos que potencia_nominal_kw es Potencia Mecánica/Útil si eff < 1.0
-        # P_elec = P_nom / eff
-        p_elec_kw = self.potencia_nominal_kw / self.eficiencia
+        # Resultados Cálculo
+        self._res_conductor = None
+
+    def calcular_corriente_nominal(self):
+        # I = kW * 1000 / (V * FP * Eff * raiz3)
+        denom = self.voltaje * self.factor_potencia * self.eficiencia
+        if self.fases == 3:
+            denom *= math.sqrt(3)
+        elif self.fases == 2:
+            denom *= 1 # Depende config, asumimos L-L simple
+        # Monofasico L-N o L-L ya considerado en voltaje input
         
-        # Considerar armónicos VFD
-        if self.tiene_vfd or self.tiene_sut: p_elec_kw *= 1.02
-        
-        fp = self.factor_potencia if self.factor_potencia > 0 else 0.9
-        kva = p_elec_kw / fp
-        kvar = kva * math.sin(math.acos(fp))
-        
-        denom = (math.sqrt(3) * self.voltaje) if self.fases == 3 else self.voltaje
-        i_nom = (kva * 1000) / denom if self.voltaje > 0 else 0
-        
-        return i_nom, p_elec_kw, kva, kvar
+        if denom == 0: return 0.0
+        return (self.potencia_nominal_kw * 1000.0) / denom
+
+    def calcular_corriente_diseno(self):
+        inom = self.calcular_corriente_nominal()
+        # NEC 210.19(A)(1): 125% para cargas continuas
+        factor = 1.25 if self.tipo_operacion == TipoOperacion.CONTINUA else 1.0
+        return inom * factor
+
+    def obtener_tierra_nec_250_122(self, amperios_proteccion):
+        # Retorna calibre string (ej: "10")
+        # Busca en la tabla el primer valor donde rating >= proteccion
+        col_idx = 1 if self.material_conductor == "CU" else 2
+        for fila in TABLA_250_122:
+            rating = fila[0]
+            if rating >= amperios_proteccion:
+                return fila[col_idx]
+        return "750" # Default gigante si se pasa
 
     def ejecutar_seleccion_conductor(self):
-        i_nom, _, _, _ = self.calcular_corriente_carga()
-        i_req = i_nom * 1.25
+        i_diseno = self.calcular_corriente_diseno()
         
-        bd = BD_CABLES_AL if self.material_conductor == "AL" else BD_CABLES_CU
+        # 1. Factores de Corrección (Derating)
+        # Temp (NEC 310.15(B)(2)(a)) - Simplificado para 90C base (THHN)
+        # Rango 30C base.
+        t = self.temp_ambiente
+        f_temp = 1.0
+        if 26 <= t <= 30: f_temp = 1.0
+        elif 31 <= t <= 35: f_temp = 0.96
+        elif 36 <= t <= 40: f_temp = 0.91
+        elif 41 <= t <= 45: f_temp = 0.87
+        elif 46 <= t <= 50: f_temp = 0.82
+        elif 51 <= t <= 55: f_temp = 0.76
+        elif 56 <= t <= 60: f_temp = 0.71
+        elif 61 <= t <= 70: f_temp = 0.58
+        elif 71 <= t <= 80: f_temp = 0.41
         
-        # Factores de Derrateo
-        # Por ahora simplificado a lo que pediste:
-        f_temp = 1.0 # Implementar lógica de temp si se requiere despues
-        f_agrup = self.factor_agrupamiento
+        # Agrupamiento
+        f_agrup = self.factor_agrupamiento # Viene del input (slider o excel)
+        
         f_total = f_temp * f_agrup
         
-        # Lógica de Selección
-        cal_opt = "750"
-        for c in ORDEN_CALIBRES:
-            if c not in bd: continue
-            amp_base = bd[c].get("A_AIRE" if self.tipo_instalacion in [TipoInstalacion.AIRE, TipoInstalacion.BANDEJA, TipoInstalacion.TRENZADA] else "A_DUCTO", 0)
-            amp_derrateada = amp_base * f_total
+        # 2. Iteración de Calibres
+        tabla_amp = TABLA_310_16_CU if self.material_conductor == "CU" else TABLA_310_16_AL
+        
+        calibre_elegido = None
+        n_conductores = 1
+        reg_pct = 0.0
+        v_caida = 0.0
+        nota = ""
+        amp_real_cable = 0.0
+        
+        # Loop para encontrar conductor
+        encontrado = False
+        idx_cal = 0
+        
+        while not encontrado:
+            cal_actual = ORDEN_CALIBRES[idx_cal]
+            # Usamos columna 90C (indice 1) para Ampacidad Base (XHHW-2/THHN)
+            amp_base = tabla_amp[cal_actual][1] 
             
-            # Chequeo Ampacidad
-            if amp_derrateada < i_req: continue
+            # Capacidad Real del Cable en sitio
+            amp_sitio = amp_base * n_conductores * f_total
             
-            # Chequeo Regulación
-            dv = (math.sqrt(3) if self.fases==3 else 2) * i_nom * ((bd[c]["R"]*0.9 + bd[c]["X"]*0.43)/1000) * self.longitud_mts / self.voltaje * 100
-            if dv <= self.MAX_CAIDA:
-                cal_opt = c; break
-        
-        # Respetar usuario si es mayor
-        idx_u = ORDEN_CALIBRES.index(self.calibre_usuario) if self.calibre_usuario in ORDEN_CALIBRES else -1
-        idx_o = ORDEN_CALIBRES.index(cal_opt)
-        sel_cal = cal_opt if idx_u < idx_o else self.calibre_usuario
-        
-        # Recalcular finales con seleccionado
-        dat = bd.get(sel_cal, bd["12"])
-        n = 1
-        while n <= 10:
-            amp_base = dat.get("A_AIRE" if self.tipo_instalacion in [TipoInstalacion.AIRE, TipoInstalacion.BANDEJA] else "A_DUCTO", 0)
-            cap_derrateada = amp_base * f_total * n
-            if cap_derrateada >= i_req: break
-            n += 1
-        
-        dv_final = (math.sqrt(3) if self.fases==3 else 2) * i_nom * ((dat["R"]*0.9 + dat["X"]*0.43)/1000) * self.longitud_mts / self.voltaje * 100
-        
-        # String Configuración
-        # Ej: 2x(3x1/0 AWG + 1x4 AWG) - Tierra simplificada a mismo calibre o menor
-        tierra = "4" # Simplificacion
-        config_str = f"{n}x(3x{sel_cal} AWG + 1x{tierra} AWG)" if self.fases == 3 else f"{n}x(2x{sel_cal} AWG + 1x{tierra} AWG)"
+            # Criterio 1: Ampacidad
+            if amp_sitio >= i_diseno:
+                # Criterio 2: Caída de Tensión
+                # dV = I * L * Z_eff
+                # Z_eff aprox = R * FP + X * sen(acos(FP))
+                # Simplificado a DC para tramos cortos o R_eff
+                datos = DATOS_FISICOS.get(cal_actual, {"r_cu":0.2, "x_cu":0.1})
+                r_key = f"r_{self.material_conductor.lower()}"
+                x_key = f"x_{self.material_conductor.lower()}"
+                r_linea = datos.get(r_key, 0.2)
+                x_linea = datos.get(x_key, 0.1)
+                
+                # Formula Aprox AC: dV_fase_neutro = I * (R*cos + X*sen) * L/1000
+                # Si es trifasico dV_linea = sqrt(3) * dV_fn
+                
+                phi = math.acos(self.factor_potencia)
+                z_eff = (r_linea * self.factor_potencia) + (x_linea * math.sin(phi))
+                
+                dv_unit = z_eff * i_diseno * (self.longitud_mts / 1000.0)
+                if self.fases == 3:
+                    v_caida = math.sqrt(3) * dv_unit / n_conductores # Dividido N hilos
+                else:
+                    v_caida = 2 * dv_unit / n_conductores # Monofasico (ida y vuelta)
+                
+                reg_pct = (v_caida / self.voltaje) * 100.0
+                
+                if reg_pct <= 3.0: # Cumple 3%
+                    calibre_elegido = cal_actual
+                    amp_real_cable = amp_sitio
+                    encontrado = True
+                else:
+                    # Falla regulación, subir calibre
+                    idx_cal += 1
+            else:
+                idx_cal += 1
+            
+            # Si se acaban los calibres, duplicar conductor
+            if idx_cal >= len(ORDEN_CALIBRES):
+                n_conductores += 1
+                idx_cal = 0 # Reiniciar búsqueda con 2 conductores
+                if n_conductores > 4: # Safety break
+                    calibre_elegido = "750"
+                    nota = "Max Iter (Necesita Busbar)"
+                    encontrado = True
+
+        # Selección de Tierra (NEC 250.122)
+        # Asumimos protección = siguiente estándar comercial arriba de I_diseno
+        # Lista simple protecciones: 15, 20, 30, 40, 50, 60, 70, 80, 100...
+        # Simplificación: Usamos I_diseno directo para buscar en tabla (lado seguro)
+        cal_tierra = self.obtener_tierra_nec_250_122(i_diseno)
 
         self._res_conductor = {
-            "Calibre": sel_cal, "N": n, "Mat": self.material_conductor,
-            "Cap_Base": amp_base,
-            "Cap_Real": cap_derrateada,
-            "I_Req": i_req, "I_Nom": i_nom, "DV": dv_final, 
-            "Config": config_str,
-            "F_Temp": f_temp, "F_Agrup": f_agrup, "F_Total": f_total,
-            "Instalacion": self.tipo_instalacion.value
+            "I_Nominal": round(self.calcular_corriente_nominal(), 1),
+            "I_Diseno": round(i_diseno, 1),
+            "Calibre": calibre_elegido,
+            "N_Hilos": n_conductores,
+            "Tierra": cal_tierra,
+            "Amp_Real": round(amp_real_cable, 1),
+            "V_Caida": round(v_caida, 2),
+            "Reg_Pct": round(reg_pct, 2),
+            "Config": f"{n_conductores}x{calibre_elegido} AWG/kcmil + {cal_tierra}(GND)",
+            "Nota": nota,
+            "Factores": f"Ft={f_temp} Fa={f_agrup}"
         }
         return self._res_conductor
 
-
-
-
-def _calcular_factor_temp_real(self):
-        """
-        Calcula F.T. basado en Tabla NEC 310.15(B)(2)(a) (Imagen provista).
-        Base 30°C, Aislamiento 90°C.
-        """
-        t = self.temp_ambiente
-        
-        # Rangos exactos de la tabla
-        if t <= 10: return 1.15
-        if t <= 15: return 1.12
-        if t <= 20: return 1.08
-        if t <= 25: return 1.04
-        if t <= 30: return 1.00 # Base
-        if t <= 35: return 0.96
-        if t <= 40: return 0.91
-        if t <= 45: return 0.87
-        if t <= 50: return 0.82
-        if t <= 55: return 0.76
-        if t <= 60: return 0.71
-        if t <= 65: return 0.65
-        if t <= 70: return 0.58
-        if t <= 75: return 0.50
-        if t <= 80: return 0.41
-        if t <= 85: return 0.29
-        
-        # Para temperaturas > 85°C según la tabla es 0.00
-        return 0.00
-
-@dataclass
-class Transformador:
-    tipo: str; refrigeracion: str; reserva_deseada: float; voltaje_pri: float; voltaje_sec: float
-    kva_requerido: float = 0.0; kva_comercial: float = 0.0; eficiencia_doe: float = 0.0; cargabilidad: float = 0.0
-    
-    def calcular(self, kva_load, kw_load, kvar_load):
-        self.kva_requerido = kva_load / (1 - (self.reserva_deseada/100.0) if self.reserva_deseada < 100 else 0.1)
-        self.kva_comercial = next((k for k in KVA_ESTANDAR if k >= self.kva_requerido), KVA_ESTANDAR[-1])
-        tbl = DOE_2016_DRY_MV_3PH if self.tipo == "SECO" else DOE_2016_LIQUID_3PH
-        k_eff = max([k for k in tbl.keys() if k <= self.kva_comercial], default=15)
-        self.eficiencia_doe = tbl.get(k_eff, 98.0)
-        eff_dec = self.eficiencia_doe/100.0
-        p_perdidas = kw_load * (1 - eff_dec)
-        p_in = kw_load + p_perdidas
-        s_in = math.sqrt(p_in**2 + kvar_load**2)
-        fp_in = p_in / s_in if s_in > 0 else 0.9
-        self.cargabilidad = (kva_load / self.kva_comercial * 100) if self.kva_comercial else 0
-        i_pri = (self.kva_comercial * 1000) / (math.sqrt(3) * self.voltaje_pri)
-        i_sec = (self.kva_comercial * 1000) / (math.sqrt(3) * self.voltaje_sec)
-        return {"kVA_Com": self.kva_comercial, "Eff": self.eficiencia_doe, "Perdidas_kW": p_perdidas, "S_In": s_in, "FP_In": fp_in, "Cargabilidad": self.cargabilidad, "I_Pri_Nom": i_pri, "I_Sec_Nom": i_sec}
-
 class Tablero:
     def __init__(self, nombre, voltaje, fases):
-        self.nombre = nombre; self.voltaje = voltaje; self.fases = fases
-        self.circuitos = []; self.sub_tableros = []; self.trafo_asociado = None
-    def agregar_c(self, c): self.circuitos.append(c)
-    def agregar_s(self, t): self.sub_tableros.append(t)
-    def get_datos_totales(self):
-        tot_kw = 0.0; tot_kvar = 0.0
-        for c in self.circuitos:
-            _, kw, _, kvar = c.calcular_corriente_carga()
-            tot_kw += kw; tot_kvar += kvar
-        tot_kva = math.sqrt(tot_kw**2 + tot_kvar**2)
-        fp_avg = tot_kw / tot_kva if tot_kva > 0 else 0.9
-        i_carga = (tot_kva * 1000) / (math.sqrt(3) * self.voltaje) if self.voltaje > 0 else 0
-        return {"kW": tot_kw, "kVAR": tot_kvar, "kVA": tot_kva, "FP": fp_avg, "I_Carga": i_carga, "I_Barraje": i_carga * 1.25}
+        self.nombre = nombre
+        self.voltaje = voltaje
+        self.fases = fases
+        self.circuitos = [] # Lista de objetos Circuito (Cargas finales)
+        self.sub_tableros = [] # Lista de objetos Tablero (Hijos)
+        self.es_subtablero = False
+        self.padre = None
 
-SISTEMA_PROYECTO = Tablero("General", 480, 3)
+    def agregar_c(self, circuito):
+        self.circuitos.append(circuito)
+
+    def agregar_subtablero(self, tablero_hijo):
+        tablero_hijo.es_subtablero = True
+        tablero_hijo.padre = self.nombre
+        self.sub_tableros.append(tablero_hijo)
+
+    def calcular_carga_total_kw(self):
+        # Suma cargas propias
+        total = sum(c.potencia_nominal_kw for c in self.circuitos)
+        # Suma cargas de subtableros (recursivo)
+        for sub in self.sub_tableros:
+            total += sub.calcular_carga_total_kw()
+        return total
