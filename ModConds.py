@@ -1,122 +1,100 @@
-import ipywidgets as widgets
+import pandas as pd
 from IPython.display import display, HTML
 import backend
 
-# =============================================================================
-# MÓDULO DE REPORTE DE CONDUCTORES (FORMATO INGENIERÍA DETALLADA)
-# =============================================================================
+def obtener_factor_temp(t):
+    # Misma lógica del backend para mostrar en el reporte
+    if 26 <= t <= 30: return 1.0
+    elif 31 <= t <= 35: return 0.96
+    elif 36 <= t <= 40: return 0.91
+    elif 41 <= t <= 45: return 0.87
+    elif 46 <= t <= 50: return 0.82
+    elif 51 <= t <= 55: return 0.76
+    elif 56 <= t <= 60: return 0.71
+    elif 61 <= t <= 70: return 0.58
+    elif 71 <= t <= 80: return 0.41
+    return 1.0
 
-ESTILO_ANCHO = """
-<style>
-    .wide-table-container {
-        overflow-x: auto; /* Scroll horizontal */
-        width: 100%;
-        margin-bottom: 30px;
-        border: 1px solid #ccc;
-    }
-    .wide-table {
-        font-family: 'Arial', sans-serif;
-        font-size: 11px; /* Letra pequeña para que quepa todo */
-        border-collapse: collapse;
-        width: 100%;
-        white-space: nowrap; /* Evita que rompa líneas en celdas */
-    }
-    .wide-table th {
-        background-color: #2c3e50;
-        color: white;
-        padding: 8px 5px;
-        text-align: center;
-        border: 1px solid #999;
-    }
-    .wide-table td {
-        padding: 5px;
-        border: 1px solid #ddd;
-        text-align: center;
-        color: #333;
-    }
-    .wide-table tr:nth-child(even) { background-color: #f9f9f9; }
-    .wide-table tr:hover { background-color: #eafaf1; }
-    .header-row { font-weight: bold; background-color: #eee; text-align: left !important; padding: 10px; }
-</style>
-"""
+def generar_dataframe():
+    data = []
+    item_counter = 1
+
+    for tbt in backend.MEMORIA_TABLEROS:
+        # Encabezado de Tablero (Fila vacía o separador si se quiere, aquí lo repetimos por fila)
+        for c in tbt.circuitos:
+            # Asegurar que haya cálculo
+            if not c._res_conductor:
+                c.ejecutar_seleccion_conductor()
+            
+            res = c._res_conductor
+            
+            # Calcular F.Temp para mostrarlo
+            f_temp = obtener_factor_temp(c.temp_ambiente)
+            
+            # Estado
+            estado = "✅ OK"
+            if res['Reg_Pct'] > 3.0: estado = "⚠️ Reg > 3%"
+            if res['Nota']: estado += f" ({res['Nota']})"
+
+            fila = {
+                "TABLERO": tbt.nombre,
+                "ITEM": item_counter,
+                "TAG": c.tag,
+                "DESCRIPCIÓN": c.descripcion,
+                "POT (kW)": c.potencia_nominal_kw,
+                "V (Sys)": c.voltaje,
+                "FASES": c.fases,
+                "F.P.": c.factor_potencia,
+                "EFF (η)": c.eficiencia,
+                "I.NOM (A)": res['I_Nominal'],
+                "I.DIS (A)": res['I_Diseno'],
+                "T.AMB (°C)": c.temp_ambiente,
+                "F.TEMP": f_temp,
+                "F.AGRUP": c.factor_agrupamiento,
+                "INSTALACIÓN": c.tipo_instalacion,
+                "MAT": c.material_conductor,
+                "AISL": c.aislamiento,
+                "TIERRA (GND)": res['Tierra'],
+                "CALIBRE (Fase)": res['Calibre'],
+                "HILOS": res['N_Hilos'],
+                "CAP. REAL (A)": res['Amp_Real'],
+                "LONG (m)": c.longitud_mts,
+                "CAÍDA (V)": res['V_Caida'],
+                "% REG": res['Reg_Pct'],
+                "ESTADO": estado
+            }
+            data.append(fila)
+            item_counter += 1
+            
+    return pd.DataFrame(data)
 
 def mostrar_reporte_conductores():
-    lista_tbt = backend.MEMORIA_TABLEROS if backend.MEMORIA_TABLEROS else [backend.SISTEMA_PROYECTO]
+    if not backend.MEMORIA_TABLEROS:
+        print("⚠️ No hay datos cargados. Ejecuta CargaDatos.cargar_demo() primero.")
+        return
+
+    df = generar_dataframe()
     
-    html = ESTILO_ANCHO
-    html += "<h2>📊 CUADRO DE CARGAS Y CÁLCULO DE CONDUCTORES</h2>"
+    # Estilos CSS para que se parezca a Excel
+    estilos = [
+        dict(selector="th", props=[("font-size", "11px"), ("text-align", "center"), ("background-color", "#2c3e50"), ("color", "white")]),
+        dict(selector="td", props=[("font-size", "11px"), ("text-align", "center")]),
+        dict(selector="tr:hover", props=[("background-color", "#ffff99")])
+    ]
     
-    for i_tbt, tbt in enumerate(lista_tbt):
-        if not tbt.circuitos: continue
-        
-        html += f"<div class='header-row'>TABLERO: {tbt.nombre} ({tbt.voltaje}V - {tbt.fases}F)</div>"
-        html += "<div class='wide-table-container'><table class='wide-table'>"
-        
-        # CABECERAS EXACTAS SEGÚN TU SOLICITUD
-        html += """
-        <thead>
-            <tr>
-                <th>Ítem</th>
-                <th>Tag</th>
-                <th>Descripción</th>
-                <th>Tensión<br>[V]</th>
-                <th>Sist.</th>
-                <th>Pot.<br>[kW]</th>
-                <th>Eff</th>
-                <th>FP</th>
-                <th>I_nom<br>[A]</th>
-                <th>I_cond<br>(Ix1.25)</th>
-                <th>Mat.</th>
-                <th>Calibre</th>
-                <th>Cap.<br>Base</th>
-                <th>Canalización</th>
-                <th>Derr.<br>Temp</th>
-                <th>Derr.<br>BD</th>
-                <th>Derr.<br>Total</th>
-                <th>Configuración Cable</th>
-                <th>Reg<br>%</th>
-                <th>Cap.<br>Real</th>
-            </tr>
-        </thead>
-        <tbody>
-        """
-        
-        for idx, c in enumerate(tbt.circuitos):
-            res = c._res_conductor if c._res_conductor else c.ejecutar_seleccion_conductor()
-            
-            # Formateo de datos
-            sistema_str = f"{c.fases}F"
-            pot_str = f"{c.potencia_nominal_kw}"
-            i_nom_str = f"{round(res['I_Nom'], 1)}"
-            i_req_str = f"{round(res['I_Req'], 1)}"
-            cap_base_str = f"{res['Cap_Base']}"
-            cap_real_str = f"{round(res['Cap_Real'], 1)}"
-            
-            html += f"""
-            <tr>
-                <td>{idx+1}</td>
-                <td>{c.tag}</td>
-                <td style='text-align:left'>{c.descripcion}</td>
-                <td>{c.voltaje}</td>
-                <td>{sistema_str}</td>
-                <td>{pot_str}</td>
-                <td>{c.eficiencia}</td>
-                <td>{c.factor_potencia}</td>
-                <td><b>{i_nom_str}</b></td>
-                <td>{i_req_str}</td>
-                <td>{c.material_conductor}</td>
-                <td>{res['Calibre']}</td>
-                <td>{cap_base_str}</td>
-                <td>{c.tipo_instalacion.value}</td>
-                <td>{res['F_Temp']}</td>
-                <td>{res['F_Agrup']}</td>
-                <td>{round(res['F_Total'], 2)}</td>
-                <td style='text-align:left; font-family:monospace'>{res['Config']}</td>
-                <td>{round(res['DV'], 2)}%</td>
-                <td style='font-weight:bold; color:green'>{cap_real_str}</td>
-            </tr>
-            """
-            
-        html += "</tbody></table></div>"
-    
-    display(HTML(html))
+    # Formateo de columnas
+    formatos = {
+        "POT (kW)": "{:.1f}",
+        "F.P.": "{:.2f}",
+        "EFF (η)": "{:.2f}",
+        "I.NOM (A)": "{:.1f}",
+        "I.DIS (A)": "{:.1f}",
+        "F.TEMP": "{:.2f}",
+        "F.AGRUP": "{:.2f}",
+        "CAP. REAL (A)": "{:.1f}",
+        "CAÍDA (V)": "{:.2f}",
+        "% REG": "{:.2f}%"
+    }
+
+    display(HTML("<h3>📊 REPORTE DE CÁLCULO DE CONDUCTORES (NEC)</h3>"))
+    display(df.style.set_table_styles(estilos).format(formatos).hide(axis="index"))
