@@ -1,7 +1,6 @@
 import math
 
 # --- TABLAS NEC Y CONSTANTES ---
-# (Se mantienen las tablas 310.16 y 250.122 definidas anteriormente)
 TABLA_310_16_CU = { "14": (20, 25), "12": (25, 30), "10": (35, 40), "8": (50, 55), "6": (65, 75), "4": (85, 95), "3": (100, 115), "2": (115, 130), "1": (130, 145), "1/0": (150, 170), "2/0": (175, 195), "3/0": (200, 225), "4/0": (230, 260), "250": (255, 290), "300": (285, 320), "350": (310, 350), "500": (380, 430), "600": (420, 475), "750": (475, 535) }
 TABLA_310_16_AL = { "12": (20, 25), "10": (30, 35), "8": (40, 45), "6": (50, 55), "4": (65, 75), "3": (75, 85), "2": (90, 100), "1": (100, 115), "1/0": (120, 135), "2/0": (135, 150), "3/0": (155, 175), "4/0": (180, 205), "250": (205, 230), "300": (230, 255), "350": (250, 280), "500": (310, 350), "600": (340, 385), "750": (385, 435) }
 TABLA_250_122 = [ (15, "14", "12"), (20, "12", "10"), (60, "10", "8"), (100, "8", "6"), (200, "6", "4"), (300, "4", "2"), (400, "3", "1"), (500, "2", "1/0"), (600, "1", "2/0"), (800, "1/0", "3/0"), (1000, "2/0", "4/0"), (1200, "3/0", "250"), (1600, "4/0", "350"), (2000, "250", "400"), (2500, "350", "600"), (3000, "400", "600"), (4000, "500", "800"), (5000, "700", "1200"), (6000, "800", "1200") ]
@@ -76,7 +75,7 @@ class Circuito:
         elif 36 <= t <= 40: f_temp = 0.91
         elif 41 <= t <= 45: f_temp = 0.87
         elif 46 <= t <= 50: f_temp = 0.82
-        elif 51 <= t <= 80: f_temp = 0.41 # Simplificado
+        elif 51 <= t <= 80: f_temp = 0.41 
         
         f_total = f_temp * self.factor_agrupamiento
         tabla_amp = TABLA_310_16_CU if self.material_conductor == "CU" else TABLA_310_16_AL
@@ -133,4 +132,12 @@ class Tablero:
         self.sub_tableros = []
         self.padre = None
 
-    def agregar_c(self, c): self.circuitos.append(
+    def agregar_c(self, c):
+        self.circuitos.append(c)
+
+    def agregar_sub(self, t): 
+        t.padre = self.nombre
+        self.sub_tableros.append(t)
+    
+    def total_kw(self):
+        return sum(c.potencia_nominal_kw for c in self.circuitos) + sum(s.total_kw() for s in self.sub_tableros)
