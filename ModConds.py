@@ -2,29 +2,26 @@ import pandas as pd
 from IPython.display import display, HTML
 import backend
 
-def obtener_factor_temp(t):
-    if 26 <= t <= 30: return 1.0
-    elif 31 <= t <= 35: return 0.96
-    elif 36 <= t <= 40: return 0.91
-    elif 41 <= t <= 45: return 0.87
-    elif 46 <= t <= 50: return 0.82
-    elif 51 <= t <= 60: return 0.71
-    elif t > 60: return 0.41
-    return 1.0
-
 def mostrar_reporte_conductores():
+    """
+    Genera tablas HTML estilizadas con los resultados del cálculo.
+    Cumple con el patrón de 'Visualización Pasiva': No recalcula, solo muestra.
+    """
     if not backend.MEMORIA_TABLEROS:
         print("⚠️ No hay datos cargados en memoria. Ejecuta CargaDatos primero.")
         return
 
-    # Estilos CSS (Similar a Excel)
+    # Definición de Estilos CSS para el Reporte
     estilos = [
-        dict(selector="th", props=[("font-size", "11px"), ("text-align", "center"), ("background-color", "#2c3e50"), ("color", "white")]),
-        dict(selector="td", props=[("font-size", "11px"), ("text-align", "center")]),
-        dict(selector="tr:hover", props=[("background-color", "#ffff99")])
+        dict(selector="th", props=[("font-size", "12px"), ("text-align", "center"), 
+                                   ("background-color", "#2c3e50"), ("color", "white"),
+                                   ("padding", "8px")]),
+        dict(selector="td", props=[("font-size", "12px"), ("text-align", "center"),
+                                   ("padding", "5px")]),
+        dict(selector="tr:hover", props=[("background-color", "#f1f2f6")])
     ]
     
-    # Formatos de número
+    # Formateo de columnas numéricas
     formatos = {
         "kW": "{:.1f}", "FP": "{:.2f}", "Eff": "{:.2f}", 
         "I.Nom": "{:.1f}", "I.Dis": "{:.1f}", 
@@ -32,59 +29,79 @@ def mostrar_reporte_conductores():
         "Cap.Real": "{:.1f}", "Caída(V)": "{:.2f}", "%Reg": "{:.2f}%"
     }
 
-    display(HTML("<h2>📊 REPORTE DE CÁLCULO (NEC) - DETALLE POR TABLERO</h2>"))
+    display(HTML("<h2>📊 REPORTE DE INGENIERÍA (NEC/NTC 2050)</h2>"))
 
-    # BUCLE PRINCIPAL: TABLERO POR TABLERO
+    # Iteramos sobre cada tablero en la memoria global
     for tbt in backend.MEMORIA_TABLEROS:
         data_tbt = []
         item_counter = 1
         
-        # Título del Tablero (Separador Visual)
-        display(HTML(f"<br><hr><h3 style='color:darkblue; margin-bottom:5px'>⚡ TABLERO: {tbt.nombre}</h3>"))
-        display(HTML(f"<i>Voltaje: {tbt.voltaje}V | Fases: {tbt.fases} | Carga Total: {tbt.total_kw():.1f} kW</i>"))
+        # Encabezado del Tablero
+        header_html = f"""
+        <div style='background-color: #ecf0f1; padding: 10px; border-left: 5px solid #2980b9; margin-top: 20px;'>
+            <h3 style='color: #2c3e50; margin: 0;'>⚡ TABLERO: {tbt.nombre}</h3>
+            <small>Voltaje: {tbt.voltaje}V | Fases: {tbt.fases} | 
+            <b>Carga Total Conectada: {tbt.total_kw():.2f} kW</b></small>
+        </div>
+        """
+        display(HTML(header_html))
 
         if not tbt.circuitos:
-            display(HTML("<span style='color:gray'>Sin cargas registradas.</span>"))
+            display(HTML("<div style='padding:10px; color:gray;'><i>Sin circuitos asignados.</i></div>"))
             continue
 
         for c in tbt.circuitos:
-            # Asegurar cálculo actualizado
-            if not c._res_conductor: c.ejecutar_seleccion_conductor()
-            res = c._res_conductor
-            
-            f_temp = obtener_factor_temp(c.temp_ambiente)
-            
-            # Estado Alerta
-            estado = "OK"
-            if res['Reg_Pct'] > 3.0: estado = "⚠️ >3%"
-            if res['Nota']: estado += f" {res['Nota']}"
+            # 1. Invocamos al backend (Idempotente: si ya calculó, solo trae datos)
+            # Ahora el backend nos devuelve los Metadatos exactos que usó.
+            try:
+                res = c.ejecutar_seleccion_conductor()
+            except Exception as e:
+                # Manejo básico de errores de visualización
+                res = {"Nota": f"ERROR: {str(e)}", "Reg_Pct": 0, "Config": "ERR"}
 
+            # 2. Semáforos Visuales (Lógica de Alerta)
+            estado_visual = "✅ OK"
+            estilo_estado = "color: green; font-weight: bold;"
+            
+            if res['Reg_Pct'] > 3.0: 
+                estado_visual = "⚠️ >3%"
+                estilo_estado = "color: red; font-weight: bold;"
+            
+            if "CRÍTICO" in res.get('Nota', ''):
+                estado_visual = "⛔ FALLA"
+                estilo_estado = "color: darkred; font-weight: bold;"
+
+            # 3. Mapeo Directo (Sin lógica de negocio, solo presentación)
             fila = {
-                "Item": item_counter,
+                "#": item_counter,
                 "Tag": c.tag,
                 "Descripción": c.descripcion,
                 "kW": c.potencia_nominal_kw,
                 "FP": c.factor_potencia,
                 "Eff": c.eficiencia,
-                "I.Nom": res['I_Nominal'],
-                "I.Dis": res['I_Diseno'],
+                "I.Nom": res.get('I_Nominal', 0),
+                "I.Dis": res.get('I_Diseno', 0),
                 "T(°C)": c.temp_ambiente,
-                "F.Temp": f_temp,
-                "F.Agrup": c.factor_agrupamiento,
+                # Leemos los metadatos del backend, NO recalculamos con funciones locales
+                "F.Temp": res.get('Meta_F_Temp', 1.0),
+                "F.Agrup": res.get('Meta_F_Agrup', 1.0),
                 "Instalación": c.tipo_instalacion,
-                "Mat": c.material_conductor,
+                "Mat": res.get('Meta_Material', 'CU'),
                 "Aisl": c.aislamiento,
-                "Tierra": res['Tierra'],
-                "Fase (Config)": res['Config'].split('+')[0], # Solo parte fase
-                "Cap.Real": res['Amp_Real'],
+                "Tierra": res.get('Tierra', '-'),
+                "Configuración": res.get('Config', '?'),
+                "Cap.Real": res.get('Amp_Real', 0),
                 "L(m)": c.longitud_mts,
-                "Caída(V)": res['V_Caida'],
-                "%Reg": res['Reg_Pct'],
-                "Estado": estado
+                "Caída(V)": res.get('V_Caida', 0),
+                "%Reg": res.get('Reg_Pct', 0),
+                "Estado": f"<span style='{estilo_estado}'>{estado_visual} {res.get('Nota','')}</span>"
             }
             data_tbt.append(fila)
             item_counter += 1
         
-        # Crear DataFrame de ESTE tablero
-        df = pd.DataFrame(data_tbt)
-        display(df.style.set_table_styles(estilos).format(formatos).hide(axis="index"))
+        # Renderizado DataFrame
+        if data_tbt:
+            df = pd.DataFrame(data_tbt)
+            # Aplicamos estilos
+            styler = df.style.set_table_styles(estilos).format(formatos).hide(axis="index")
+            display(styler)
