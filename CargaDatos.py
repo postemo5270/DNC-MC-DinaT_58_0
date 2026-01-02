@@ -1,101 +1,94 @@
 import backend
-from backend import Circuito, Tablero, TipoInstalacion, TipoOperacion
+from backend import Circuito, Tablero
 
 def cargar_demo():
-    print("🚧 INICIANDO ETL: Carga de Datos de Prueba (ModConds.xlsx Mock)...")
+    print("🚧 INICIANDO ETL: Carga de Datos Estructurada (ModConds.xlsx)...")
     
-    # Limpiamos la memoria para evitar duplicados en recargas
+    # Limpiamos memoria
     backend.MEMORIA_TABLEROS = []
-    
-    # =========================================================================
-    # 1. INSTANCIACIÓN DE LA TOPOLOGÍA (Nodos)
-    # =========================================================================
-    
-    # Sistema 1
-    t_main1 = Tablero("Tablero Principal 1", 480, 3)
-    t_sub1_tp1 = Tablero("Subtablero 1 (TP1)", 480, 3)
-    t_main1.agregar_sub(t_sub1_tp1)
-    
-    # Sistema 2
-    t_main2 = Tablero("Tablero Principal 2", 480, 3)
-    t_sub1_tp2 = Tablero("Subtablero 1 (TP2)", 480, 3)
-    t_main2.agregar_sub(t_sub1_tp2)
 
     # =========================================================================
-    # 2. INGESTA DE CARGAS (Hojas)
+    # 1. TABLERO PRINCIPAL 1 (TP1)
     # =========================================================================
-    
-    # --- Cargas Subtablero 1 (TP1) ---
-    c_sub11 = Circuito(
-        tag="Carga sub 11", descripcion="Motor Subtablero", 
-        potencia_nominal_kw=100.0, voltaje=480, fases=3, 
-        factor_potencia=0.79, eficiencia=0.902, 
-        longitud_mts=100.0, material_conductor="AL", 
-        tipo_instalacion=TipoInstalacion.BANCO_DUCTOS,
-        temp_ambiente=30
+    tp1 = Tablero("Tablero Principal 1", 480, 3)
+
+    # Carga 11: 100 kW, THHN, Al, BD
+    c11 = Circuito(
+        tag="Carga 11", descripcion="Carga Principal",
+        p_input=100.0, unidad="kW", tension=480, fases=3,
+        fp=0.79, eff=0.902, longitud=100.0, 
+        mat="AL", tipo_aislam="THHN", t_aislamiento_cable=90,
+        tipo_instalacion="BD-Sub", req_neutro="NO"
     )
-    t_sub1_tp1.agregar_c(c_sub11)
+    tp1.agregar_c(c11)
 
-    # --- Cargas Tablero Principal 1 ---
-    # Carga 11: 100 kW
-    c_11 = Circuito(
-        tag="Carga 11", descripcion="Carga Principal", 
-        potencia_nominal_kw=100.0, voltaje=480, fases=3, 
-        factor_potencia=0.79, eficiencia=0.902, 
-        longitud_mts=100.0, material_conductor="AL", 
-        tipo_instalacion=TipoInstalacion.BANCO_DUCTOS
+    # Carga 12: 75 HP, THHN, Al, BD (Nota: 75HP = 55.9kW aprox, pero el sistema calcula)
+    c12 = Circuito(
+        tag="Carga 12", descripcion="Motor Bomba",
+        p_input=75.0, unidad="hp", tension=480, fases=3,
+        fp=0.79, eff=0.902, longitud=100.0,
+        mat="AL", tipo_aislam="THHN", t_aislamiento_cable=90,
+        tipo_instalacion="BD-Sub", req_neutro="NO"
     )
-    t_main1.agregar_c(c_11)
+    tp1.agregar_c(c12)
 
-    # Carga 12: 75 HP -> 55.9 kW
-    c_12 = Circuito(
-        tag="Carga 12", descripcion="Motor 75HP", 
-        potencia_nominal_kw=55.9, voltaje=480, fases=3, 
-        factor_potencia=0.79, eficiencia=0.902, 
-        longitud_mts=100.0, material_conductor="AL", 
-        tipo_instalacion=TipoInstalacion.BANCO_DUCTOS
+    # Carga 13: 112 kVA, THHN, Al, BD
+    c13 = Circuito(
+        tag="Carga 13", descripcion="Carga Genérica",
+        p_input=112.0, unidad="kVA", tension=480, fases=3,
+        fp=0.79, eff=0.902, longitud=100.0,
+        mat="AL", tipo_aislam="THHN", t_aislamiento_cable=90,
+        tipo_instalacion="BD-Sub", req_neutro="NO"
     )
-    t_main1.agregar_c(c_12)
+    tp1.agregar_c(c13)
 
-    # Carga 13: 112 kVA -> 88.5 kW
-    c_13 = Circuito(
-        tag="Carga 13", descripcion="Carga 112kVA", 
-        potencia_nominal_kw=88.5, voltaje=480, fases=3, 
-        factor_potencia=0.79, eficiencia=0.902, 
-        longitud_mts=100.0, material_conductor="AL", 
-        tipo_instalacion=TipoInstalacion.BANCO_DUCTOS
-    )
-    t_main1.agregar_c(c_13)
-
-    # --- ALIMENTADOR DINÁMICO (TP1 -> SUB1) ---
-    # Calculamos la carga acumulada del subtablero para dimensionar su alimentador
-    kw_sub1 = t_sub1_tp1.total_kw()
-    c_alim1 = Circuito(
-        tag="ALIM-SUB-TP1", descripcion=f"Alim. {t_sub1_tp1.nombre}", 
-        potencia_nominal_kw=kw_sub1, voltaje=480, fases=3, 
-        factor_potencia=0.95, longitud_mts=20.0, 
-        material_conductor="CU", tipo_instalacion=TipoInstalacion.BANDEJA,
-        tipo_operacion=TipoOperacion.CONTINUA
-    )
-    t_main1.agregar_c(c_alim1)
-
-    # --- Cargas Sistema 2 (TP2 y SUB2) ---
-    # (Resumido para brevedad, usando la misma lógica)
-    c_sub21 = Circuito("Carga sub 21", "Motor Sub 2", 100.0, 480, 3, 0.79, TipoOperacion.CONTINUA, 100.0, "AL", TipoInstalacion.BANCO_DUCTOS, eficiencia=0.902)
-    t_sub1_tp2.agregar_c(c_sub21)
+    # --- SUBTABLERO 1 (TP1) ---
+    sub1_tp1 = Tablero("Subtablero 1 (TP1)", 480, 3)
     
-    c_21 = Circuito("Carga 21", "Carga P2", 100.0, 480, 3, 0.79, TipoOperacion.CONTINUA, 100.0, "AL", TipoInstalacion.BANCO_DUCTOS, eficiencia=0.902)
-    t_main2.agregar_c(c_21)
+    # Carga sub 11
+    cs11 = Circuito(
+        tag="Carga sub 11", descripcion="Carga Interna Sub",
+        p_input=100.0, unidad="kW", tension=480, fases=3,
+        fp=0.79, eff=0.902, longitud=100.0,
+        mat="AL", tipo_aislam="THHN", t_aislamiento_cable=90,
+        tipo_instalacion="BD-Sub", req_neutro="NO"
+    )
+    sub1_tp1.agregar_c(cs11)
+    
+    # Vincular Subtablero a Principal
+    tp1.agregar_sub(sub1_tp1)
 
-    # Alimentador Sub 2
-    kw_sub2 = t_sub1_tp2.total_kw()
-    c_alim2 = Circuito(f"ALIM-SUB-TP2", f"Alim. {t_sub1_tp2.nombre}", kw_sub2, 480, 3, 0.95, TipoOperacion.CONTINUA, 20.0, "CU", TipoInstalacion.BANDEJA)
-    t_main2.agregar_c(c_alim2)
 
     # =========================================================================
-    # 3. PUBLICACIÓN EN MEMORIA GLOBAL
+    # 2. TABLERO PRINCIPAL 2 (TP2)
     # =========================================================================
-    backend.MEMORIA_TABLEROS.extend([t_main1, t_sub1_tp1, t_main2, t_sub1_tp2])
-    backend.SISTEMA_PROYECTO = t_main1
+    tp2 = Tablero("Tablero Principal 2", 480, 3)
+
+    # Carga 21
+    c21 = Circuito(
+        tag="Carga 21", descripcion="Carga P2",
+        p_input=100.0, unidad="kW", tension=480, fases=3,
+        fp=0.79, eff=0.902, longitud=100.0,
+        mat="AL", tipo_aislam="THHN", t_aislamiento_cable=90,
+        tipo_instalacion="BD-Sub", req_neutro="NO"
+    )
+    tp2.agregar_c(c21)
+
+    # --- SUBTABLERO 1 (TP2) ---
+    sub1_tp2 = Tablero("Subtablero 21", 480, 3) # Nombre ajustado a ModConds
     
-    print(f"✅ ETL FINALIZADO: {len(backend.MEMORIA_TABLEROS)} tableros cargados y listos para cálculo.")
+    # Carga sub 21
+    cs21 = Circuito(
+        tag="Carga sub 21", descripcion="Carga Interna Sub 2",
+        p_input=100.0, unidad="kW", tension=480, fases=3,
+        fp=0.79, eff=0.902, longitud=100.0,
+        mat="AL", tipo_aislam="THHN", t_aislamiento_cable=90,
+        tipo_instalacion="BD-Sub", req_neutro="NO"
+    )
+    sub1_tp2.agregar_c(cs21)
+    
+    tp2.agregar_sub(sub1_tp2)
+
+    # Cargar a Memoria Global
+    backend.MEMORIA_TABLEROS.extend([tp1, sub1_tp1, tp2, sub1_tp2])
+    print(f"✅ ETL FINALIZADO: {len(backend.MEMORIA_TABLEROS)} tableros cargados.")
