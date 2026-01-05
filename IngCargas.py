@@ -213,18 +213,23 @@ def on_add(b):
         # Guardar en memoria
         t.agregar_c(nc)
         
-        # Feedback Visual (Sin recargar toda la página)
+        # Feedback Visual: Mensaje de éxito claro
         color = "green" if res['Estado_Cumplimiento'] == "OK" else "red"
-        msg = f"<div style='padding:5px; background-color:#f8f9fa; border-left: 4px solid {color}'>" \
-              f"<b>✅ {nc.tag} Agregado:</b> {res['Config_Fase']} + {res['Calibre_Tierra']}(GND) | Reg: {res['Reg_Porc']:.2f}%</div>"
+        msg = f"<div style='padding:10px; background-color:#e8f5e9; border-left: 5px solid {color}; margin-bottom: 10px;'>" \
+              f"<b>✅ Carga {nc.tag} Guardada.</b><br>" \
+              f"<small>Cable: {res['Config_Fase']} + {res['Calibre_Tierra']}(GND) | Reg: {res['Reg_Porc']:.2f}%</small><br>" \
+              f"<i>Puede ingresar la siguiente carga ahora.</i></div>"
         
         with out_log:
-            clear_output(wait=True) # Limpia el mensaje anterior
+            clear_output(wait=True)
             display(widgets.HTML(msg))
             
-        # Limpieza de campos clave para la siguiente carga
+        # === LIMPIEZA INTELIGENTE ===
+        # Borramos solo lo que cambia entre carga y carga
         txt_tag.value = ""
         txt_desc.value = ""
+        num_p.value = 0.0 
+        # NOTA: No borramos Material ni Aislamiento para agilizar la carga masiva
 
     except Exception as e:
         with out_log:
