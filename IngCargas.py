@@ -66,11 +66,14 @@ def mostrar_formulario_cargas(out_principal):
             datos_proyecto['cargas'].append(nueva_carga)
             mostrar_formulario_cargas(out_principal)
 
-        def on_finalizar(b):
-            out_principal.clear_output()
-            with out_principal:
-                display(crear_titulo("✅ INGRESO COMPLETADO"))
-                print(f"Cargas en memoria: {len(datos_proyecto['cargas'])}")
+        # Dentro de IngCargas.py, al final de la función mostrar_formulario_cargas:
+def on_finalizar(b):
+    out_principal.clear_output()
+    with out_principal:
+        display(crear_titulo("✅ PROCESO TERMINADO"))
+        print(f"Proyecto: {datos_proyecto['nombre']}")
+        print(f"Se han capturado {len(datos_proyecto['cargas'])} cargas.")
+        print("Pulse 'GENERAR REPORTE' abajo para procesar.")
 
         btn_guardar.on_click(on_guardar)
         btn_finalizar.on_click(on_finalizar)
