@@ -64,10 +64,8 @@ def on_tbt_save(b):
     
     padre_sel = drop_padre.value
     if padre_sel != "NINGUNO (PRINCIPAL)":
-        for t in backend.MEMORIA_TABLEROS:
-            if t.nombre == padre_sel:
-                t.agregar_sub(nuevo_tbt)
-                break
+        nuevo_tbt.padre = padre_sel
+        # ... resto del código ...
     
     backend.MEMORIA_TABLEROS.append(nuevo_tbt)
     sesion["tbt_actual"] = nuevo_tbt
@@ -170,29 +168,32 @@ def on_add(b):
             display(widgets.HTML(f"❌ <b>Error:</b> {str(e)}"))
 
 def on_fin(b):
+    tbt_actual = sesion["tbt_actual"]
+    
+    # === LÓGICA DE INYECCIÓN AUTOMÁTICA EN PADRE ===
+    if tbt_actual and tbt_actual.padre:
+        # 1. Buscar el objeto padre en la memoria
+        padre_obj = next((t for t in backend.MEMORIA_TABLEROS if t.nombre == tbt_actual.padre), None)
+        
+        if padre_obj:
+            try:
+                # 2. Convertir el tablero actual en una carga (Circuito)
+                carga_subtablero = tbt_actual.exportar_como_circuito()
+                
+                # 3. Inyectar esa carga en la lista de circuitos del padre
+                padre_obj.agregar_c(carga_subtablero)
+                
+                # Feedback visual de éxito
+                with out_log:
+                    display(widgets.HTML(f"""
+                        <div style='background-color:#d4edda; color:#155724; padding:5px; border: 1px solid #c3e6cb; border-radius:3px; margin-top:5px;'>
+                        <b>🔄 VINCULADO:</b> Subtablero '{tbt_actual.nombre}' inyectado en '{padre_obj.nombre}'.<br>
+                        <i>Carga: {carga_subtablero.p_input:.2f} kW | Breaker: {carga_subtablero.res['I_Proteccion']} A</i>
+                        </div>
+                    """))
+            except Exception as e:
+                with out_log:
+                    display(widgets.HTML(f"<b style='color:red'>Error inyectando en padre: {str(e)}</b>"))
+    # ===============================================
+
     mostrar_decision()
-
-btn_add.on_click(on_add)
-btn_fin.on_click(on_fin)
-
-# =============================================================================
-# 4. FLUJO FINAL
-# =============================================================================
-btn_new_tbt = widgets.Button(description="CREAR OTRO TABLERO", button_style='primary')
-btn_end_all = widgets.Button(description="VER REPORTE FINAL", button_style='danger')
-
-def mostrar_decision():
-    with out_main:
-        clear_output()
-        display(widgets.VBox([
-            widgets.HTML("<h3>¿Desea continuar configurando el sistema?</h3>"),
-            btn_new_tbt, 
-            btn_end_all
-        ]))
-
-btn_new_tbt.on_click(lambda b: mostrar_crear_tbt())
-btn_end_all.on_click(lambda b: display(widgets.HTML("<h3>✅ SISTEMA CONFIGURADO. Ejecute la celda de Reporte (ModConds).</h3>")))
-
-def iniciar_interfaz():
-    display(out_main)
-    mostrar_inicio()
