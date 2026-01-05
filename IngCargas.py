@@ -24,10 +24,25 @@ txt_proy = widgets.Text(description="Proyecto:", placeholder="Nombre del Proyect
 btn_start = widgets.Button(description="INICIAR PROYECTO", button_style='primary', layout=style_full)
 
 def mostrar_inicio():
+    # 1. Limpiamos campos por si acaso se reinicia el proyecto
+    txt_proy.value = "" 
+    
+    # 2. Construimos la interfaz en una lista ordenada
+    items_inicio = [
+        widgets.HTML("<h3 style='color:#2980b9; border-bottom: 2px solid #2980b9; padding-bottom:10px'>📂 GESTIÓN DE PROYECTO ELÉCTRICO</h3>"),
+        widgets.HTML("<p>Ingrese el nombre del proyecto para comenzar la memoria de cálculo.</p>"),
+        txt_proy,
+        widgets.HTML("<br>"), # Espaciador
+        btn_start
+    ]
+    
+    # 3. Empaquetamos todo en un contenedor vertical (VBox)
+    contenedor_inicio = widgets.VBox(items_inicio)
+
+    # 4. Renderizamos una sola vez
     with out_main:
-        clear_output()
-        display(widgets.HTML("<h3 style='color:#2980b9'>📂 GESTIÓN DE PROYECTO ELÉCTRICO</h3>"))
-        display(widgets.VBox([txt_proy, btn_start]))
+        clear_output(wait=True)
+        display(contenedor_inicio)
 
 def on_start(b):
     if not txt_proy.value: return
