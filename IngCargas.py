@@ -135,14 +135,14 @@ def agregar_carga(b):
         # 4. === VISUALIZADOR DE LISTA (HISTORIAL) ===
         item_id = len(t.circuitos)
         
-        # Diseño de la fila
+        # CORRECCIÓN AQUÍ: Usamos c.l_m en vez de c.longitud
         fila_html = f"""
         <div style='border-bottom:1px solid #eee; padding:5px; font-family:sans-serif; font-size:13px; color:#2c3e50;'>
             <b style='color:#7f8c8d'>#{item_id}</b> | 
             <b style='color:#2980b9'>{c.tag}</b> | 
             {c.descripcion} | 
             <b>{c.p_input} {c.unidad}</b> | 
-            L: {c.longitud}m 
+            L: {c.l_m}m 
             <span style='float:right; color:green; font-size:0.9em'>✅ Ok</span>
         </div>
         """
@@ -153,7 +153,7 @@ def agregar_carga(b):
                 clear_output(wait=True)
                 display(widgets.HTML("<div style='background:#ecf0f1; padding:5px; font-weight:bold; border-bottom:2px solid #bdc3c7; color:#2c3e50'>HISTORIAL DE CARGAS INGRESADAS:</div>"))
             
-            # Agregamos la nueva fila sin borrar las anteriores
+            # Agregamos la nueva fila
             display(widgets.HTML(fila_html))
             
         # 5. Limpiar campos para la siguiente
