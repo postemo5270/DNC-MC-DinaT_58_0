@@ -3,27 +3,27 @@ import IngCargas
 import importlib
 
 def main():
+    # Recarga módulos para limpiar caché de Colab
     importlib.reload(backend)
     importlib.reload(IngCargas)
     
-    # Captura el estado del proyecto generado por la interfaz
+    # Lanza la UI y captura el objeto de datos
     proyecto = IngCargas.main()
     
-    # Validamos si ya hay cargas (esto se imprimirá en Colab)
+    # El código de abajo se ejecutará después de que interactúes con la UI
+    # pero para ver el reporte final, puedes imprimirlo cuando el usuario termine.
     if not proyecto['cargas']:
-        print("Esperando a que termines de ingresar los datos en la interfaz superior...")
+        print("Esperando ingreso de cargas en la interfaz...")
         return
 
     print("\n" + "="*50)
-    print(f"REPORTE DE TABLERO: {proyecto['nombre']}")
+    print(f"REPORTE FINAL: {proyecto['nombre'].upper()}")
     print("="*50)
 
     for c in proyecto['cargas']:
-        # Aquí usas el backend para cada carga ingresada
-        # Ejemplo:
-        seccion = backend.calcular_seccion(c) 
-        print(f"Carga: {c['tag']} | Potencia: {c['potencia']} {c['unidad']}")
-        print(f"Resultado Backend: {seccion}")
+        # Ejemplo de llamado al backend
+        print(f"CARGA: {c['tag']} | POTENCIA: {c['potencia']} {c['unidad']}")
+        # Aquí puedes llamar a: backend.tu_funcion_de_calculo(c)
         print("-" * 30)
 
 if __name__ == "__main__":
