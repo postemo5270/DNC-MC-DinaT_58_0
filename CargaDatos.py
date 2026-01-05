@@ -4,7 +4,7 @@ from backend import Circuito, Tablero
 def cargar_demo():
     print("🚧 INICIANDO CARGA SIMPLIFICADA (Solo 2 Cargas)...")
     
-    # 1. Limpiamos memoria para evitar duplicados
+    # 1. Limpiamos memoria para evitar duplicados anteriores
     backend.MEMORIA_TABLEROS = []
 
     # =========================================================================
@@ -33,13 +33,8 @@ def cargar_demo():
     tp1.agregar_c(c2)
 
     # =========================================================================
-    # CARGAR A MEMORIA
+    # CARGAR A MEMORIA GLOBAL
     # =========================================================================
-    # Agregamos solo el tablero principal (que ya contiene las dos cargas dentro)
     backend.MEMORIA_TABLEROS.append(tp1)
     
     print(f"✅ CARGA FINALIZADA: 1 Tablero con 2 Cargas cargado en memoria.")
-
-# Si necesitas ejecutarlo directamente para probar:
-if __name__ == "__main__":
-    cargar_demo()
