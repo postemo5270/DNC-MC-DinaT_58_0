@@ -37,11 +37,9 @@ def mostrar_formulario_cargas(out_principal):
         
         # --- SECCIÓN C: INSTALACIÓN ---
         w_instalacion = widgets.Dropdown(options=backend.LISTA_INSTALACION, description="Tipo Inst.:", layout=widgets.Layout(width='300px'))
-        # Widget condicional (inicialmente oculto o deshabilitado si no aplica)
         w_mat_ducto = widgets.Dropdown(options=backend.LISTA_MAT_CANALIZACION, description="Mat. Ducto:", layout=widgets.Layout(width='300px'), disabled=True)
         w_temp = widgets.IntSlider(value=30, min=10, max=60, description="T. Amb (°C):")
 
-        # Lógica Reactiva: Habilitar material ducto solo si es Tubería
         def on_change_instalacion(change):
             if backend.validar_requerimiento_magnetico(change['new']):
                 w_mat_ducto.disabled = False
@@ -61,7 +59,6 @@ def mostrar_formulario_cargas(out_principal):
         btn_guardar = widgets.Button(description="Guardar Carga", button_style='success', icon='check')
         btn_finalizar = widgets.Button(description="Finalizar Ingreso", button_style='warning', icon='stop')
 
-        # LAYOUT VISUAL (Filas compactas)
         form_ui = widgets.VBox([
             crear_fila([w_tag, w_desc]),
             widgets.HTML("<b>Datos Eléctricos:</b>"),
@@ -77,9 +74,7 @@ def mostrar_formulario_cargas(out_principal):
         
         display(form_ui)
 
-        # LOGICA DE GUARDADO
         def on_guardar(b):
-            # Recopilar datos
             nueva_carga = {
                 "id": len(datos_proyecto['cargas']) + 1,
                 "tag": w_tag.value,
@@ -97,91 +92,33 @@ def mostrar_formulario_cargas(out_principal):
                 "temp_cable": w_temp_aisl.value
             }
             datos_proyecto['cargas'].append(nueva_carga)
-            print(f"✅ Carga {w_tag.value} guardada correctamente.")
-            # Recursividad: Limpiar y mostrar formulario nuevo
+            print(f"✅ Carga {w_tag.value} guardada.")
             mostrar_formulario_cargas(out_principal)
 
         def on_finalizar(b):
             out_principal.clear_output()
             with out_principal:
-                display(crear_titulo("RESUMEN DE PROYECTO"))
-                print(f"Proyecto: {datos_proyecto['nombre']}")
-                print(f"Tablero Principal: {datos_proyecto['tablero'].get('tag')} ({datos_proyecto['tablero'].get('tension')}V)")
-                print(f"Total Cargas Ingresadas: {len(datos_proyecto['cargas'])}")
-                print("-" * 30)
-                for c in datos_proyecto['cargas']:
-                    print(f"#{c['id']} [{c['tag']}] {c['potencia']} {c['unidad']} -> {c['tipo_inst']}")
-                print("\n✅ DATOS LISTOS PARA MOTOR DE CÁLCULO")
+                display(crear_titulo("DATOS LISTOS"))
+                print(f"Cargas procesadas: {len(datos_proyecto['cargas'])}")
 
         btn_guardar.on_click(on_guardar)
         btn_finalizar.on_click(on_finalizar)
 
-# --- PANTALLA 2: DATOS DE TABLERO ---
-def mostrar_config_tablero(out_principal):
-    out_principal.clear_output()
-    
-    with out_principal:
-        display(crear_titulo("2. Configuración Tablero Principal"))
-        
-        # Widgets
-        w_tag = widgets.Text(description="Tag Tablero:", value="T-Gral")
-        w_desc = widgets.Text(description="Descripción:", placeholder="Tablero General de Baja Tensión")
-        
-        # Listas de selección (Scrolls)
-        w_tension = widgets.Dropdown(options=backend.LISTA_TENSION, description="Tensión (V):")
-        w_fases = widgets.Dropdown(options=backend.LISTA_FASES, description="Fases:")
-        w_neutro = widgets.Dropdown(options=["SI", "NO"], description="Neutro:")
-        
-        btn_crear_tablero = widgets.Button(description="Crear Tablero", button_style='primary')
+# --- PANTALLA 2 Y 1 --- (Omitidas por espacio, pero mantenlas igual)
+# ... [TUS FUNCIONES mostrar_config_tablero() y el resto del archivo] ...
 
-        # Layout optimizado
-        form = widgets.VBox([
-            crear_fila([w_tag, w_desc]),
-            crear_fila([w_tension, w_fases, w_neutro]),
-            widgets.HTML("<br>"),
-            btn_crear_tablero
-        ])
-        
-        display(form)
-
-        def on_crear_tablero(b):
-            if not w_tag.value:
-                print("⚠️ Falta el Tag del tablero")
-                return
-            
-            datos_proyecto['tablero'] = {
-                "tag": w_tag.value,
-                "descripcion": w_desc.value,
-                "tension": w_tension.value,
-                "fases": w_fases.value,
-                "neutro": w_neutro.value
-            }
-            mostrar_formulario_cargas(out_principal)
-
-        btn_crear_tablero.on_click(on_crear_tablero)
-
-# --- PANTALLA 1: INICIO DE PROYECTO ---
 def main():
-    # Area de Salida Principal (Contenedor dinámico)
     out_principal = widgets.Output()
     display(out_principal)
-    
     with out_principal:
-        display(crear_titulo("1. Nuevo Proyecto de Ingeniería"))
-        
-        w_nombre_proy = widgets.Text(description="Proyecto:", placeholder="Nombre del proyecto...")
+        # Aquí inicia tu secuencia de pantallas original
+        w_nombre_proy = widgets.Text(description="Proyecto:")
         btn_inicio = widgets.Button(description="Crear Proyecto", button_style='info')
-        
         display(widgets.HBox([w_nombre_proy, btn_inicio]))
-
         def on_inicio(b):
-            if w_nombre_proy.value:
-                datos_proyecto['nombre'] = w_nombre_proy.value
-                mostrar_config_tablero(out_principal)
-            else:
-                print("⚠️ Ingrese un nombre de proyecto")
-
+            datos_proyecto['nombre'] = w_nombre_proy.value
+            mostrar_config_tablero(out_principal)
         btn_inicio.on_click(on_inicio)
-
-if __name__ == "__main__":
-    main()
+    
+    # EL PUENTE: Retorna el objeto para que ModConds pueda usarlo
+    return datos_proyecto
