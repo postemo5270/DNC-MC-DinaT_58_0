@@ -213,13 +213,64 @@ class Tablero:
         self.fases = fases
         self.circuitos: List[Circuito] = []
         self.sub_tableros: List['Tablero'] = []
-        self.padre: Optional[str] = None
+        self.padre: Optional[str] = None # Guardamos el nombre del padre (String)
     
-    def agregar_c(self, c: Circuito) -> None: self.circuitos.append(c)
+    def agregar_c(self, c: Circuito) -> None: 
+        self.circuitos.append(c)
+        
     def agregar_sub(self, t: 'Tablero') -> None: 
         t.padre = self.nombre
         self.sub_tableros.append(t)
+    
     def total_kw(self) -> float:
+        # Suma recursiva simple (para chequeos rápidos)
         kw = sum(c._calcular_kva() * c.fp for c in self.circuitos)
         kw += sum(s.total_kw() for s in self.sub_tableros)
         return kw
+
+    def obtener_resumen(self) -> Dict[str, float]:
+        """Calcula la potencia total acumulada (Cargas propias + Subtableros ya inyectados)"""
+        # Nota: Aquí asumimos que los subtableros HIJOS ya se inyectaron como circuitos en la lista self.circuitos
+        # gracias a la lógica Top-Down de IngDatos.py
+        total_kw = sum(c.res.get("kVA_Calc", 0) * c.fp for c in self.circuitos)
+        total_kva = sum(c.res.get("kVA_Calc", 0) for c in self.circuitos)
+        
+        # Evitar división por cero
+        fp_promedio = (total_kw / total_kva) if total_kva > 0 else 0.9
+        
+        return {
+            "KW": total_kw,
+            "KVA": total_kva,
+            "FP": fp_promedio
+        }
+
+    def exportar_como_circuito(self) -> Circuito:
+        """
+        Convierte este tablero entero en un objeto 'Circuito' (Carga)
+        para ser insertado en el tablero padre.
+        """
+        resumen = self.obtener_resumen()
+        
+        # Creamos un Circuito que representa al Alimentador
+        alimentador = Circuito(
+            tag=f"SUB-{self.nombre}",
+            descripcion=f"Alimentador Tablero {self.nombre}",
+            p_input=resumen["KW"], 
+            unidad="kW",
+            tension=self.voltaje, 
+            fases=self.fases,
+            fp=resumen["FP"],
+            eff=1.0, 
+            longitud=10.0, # Distancia default, editable luego si se requiere
+            mat="CU",
+            tipo_aislam="THHN",
+            t_aislamiento_cable=90,
+            tipo_instalacion="Bandeja",
+            req_neutro="SI",
+            t_ambiente=30,
+            tipo_carga="Continua" # Alimentadores al 125%
+        )
+        
+        # Ejecutamos el cálculo NEC/NTC para dimensionar el cable del alimentador
+        alimentador.ejecutar_calculo()
+        return alimentador
