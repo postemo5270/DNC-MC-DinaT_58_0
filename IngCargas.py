@@ -197,3 +197,9 @@ def on_fin(b):
     # ===============================================
 
     mostrar_decision()
+
+# === AGREGAR ESTO AL FINAL DE IngCargas.py ===
+
+def iniciar_interfaz():
+    display(out_main)
+    mostrar_inicio()
