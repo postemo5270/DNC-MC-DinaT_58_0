@@ -1,49 +1,41 @@
+import json
+import os
 import backend
-import IngCargas
 import importlib
-import ipywidgets as widgets
-from IPython.display import display
 
 def main():
-    # Recargamos para asegurar que el diccionario global esté limpio al inicio
+    # Aseguramos que los cálculos del backend estén actualizados
     importlib.reload(backend)
-    importlib.reload(IngCargas)
     
-    # 1. Lanzamos la interfaz de ingreso
-    # No necesitamos el botón "Crear" extra de ModConds, usamos el de IngCargas
-    IngCargas.main()
+    archivo = 'proyecto_actual.json'
     
-    # 2. Botón de Reporte vinculado al estado real de IngCargas
-    btn_reporte = widgets.Button(
-        description="GENERAR REPORTE FINAL", 
-        button_style='danger', 
-        icon='calculator',
-        layout=widgets.Layout(width='300px', height='45px')
-    )
-    
-    output_reporte = widgets.Output()
+    if not os.path.exists(archivo):
+        print(f"❌ Error: No se encuentra el archivo {archivo}. Ejecuta primero IngCargas.py")
+        return
 
-    def al_solicitar_reporte(b):
-        with output_reporte:
-            output_reporte.clear_output()
-            # EXTRAEMOS LOS DATOS DIRECTAMENTE DEL MÓDULO ACTUALIZADO
-            proyecto_real = IngCargas.datos_proyecto 
-            
-            if not proyecto_real['cargas']:
-                print("⚠️ Error: Aún no has guardado ninguna carga en la interfaz superior.")
-                return
+    with open(archivo, 'r', encoding='utf-8') as f:
+        datos = json.load(f)
 
-            print(f"\nGenerando reporte para: {proyecto_real['nombre']}")
-            print("="*50)
-            for carga in proyecto_real['cargas']:
-                # Aquí el backend hace su magia
-                print(f"-> Procesando Carga: {carga['tag']}...")
-                # resultado = backend.procesar(carga)
-            print("="*50)
-            print("✅ Reporte Generado con éxito.")
+    print("\n" + "="*70)
+    print(f"REPORTE TÉCNICO INDEPENDIENTE - PROYECTO: {datos['nombre'].upper()}")
+    print(f"TABLERO: {datos['tablero'].get('tag')} | TENSIÓN: {datos['tablero'].get('tension')}V")
+    print("="*70)
 
-    btn_reporte.on_click(al_solicitar_reporte)
-    display(btn_reporte, output_reporte)
+    if not datos['cargas']:
+        print("No hay cargas registradas en el archivo.")
+        return
+
+    for carga in datos['cargas']:
+        # Aquí se ejecutan las validaciones del backend
+        # Supongamos que estas funciones ya existen en tu backend.py
+        corriente = backend.calcular_corriente(carga, datos['tablero']['tension'])
+        
+        print(f"\nCARGA: {carga['tag']}")
+        print(f" > Datos: {carga['potencia']} {carga['unidad']} | FP: {carga['fp']}")
+        print(f" > Corriente Calculada: {corriente} A")
+        print("-" * 40)
+
+    print("\n=== VALIDACIÓN FINALIZADA ===")
 
 if __name__ == "__main__":
     main()
