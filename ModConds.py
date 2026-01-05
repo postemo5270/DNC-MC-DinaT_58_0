@@ -3,24 +3,28 @@ import IngCargas
 import importlib
 
 def main():
-    # Actualiza los módulos para tomar cambios recientes
     importlib.reload(backend)
     importlib.reload(IngCargas)
     
-    # 1. Obtiene los datos ejecutando el ingreso de cargas
-    datos = IngCargas.main()
+    # Captura el estado del proyecto generado por la interfaz
+    proyecto = IngCargas.main()
     
-    # 2. Validación de seguridad
-    if datos is None:
-        print("Aviso: No se retornaron datos desde IngCargas.")
+    # Validamos si ya hay cargas (esto se imprimirá en Colab)
+    if not proyecto['cargas']:
+        print("Esperando a que termines de ingresar los datos en la interfaz superior...")
         return
 
-    # 3. Procesamiento y Reporte
-    print(f"\n--- REPORTE DEL TABLERO ({len(datos)} cargas) ---")
-    for carga in datos:
-        # Aquí llamas a la función de búsqueda/cálculo de tu backend
-        resultado = backend.realizar_busqueda(carga) 
-        print(f"Carga: {carga} -> Resultado Backend: {resultado}")
+    print("\n" + "="*50)
+    print(f"REPORTE DE TABLERO: {proyecto['nombre']}")
+    print("="*50)
+
+    for c in proyecto['cargas']:
+        # Aquí usas el backend para cada carga ingresada
+        # Ejemplo:
+        seccion = backend.calcular_seccion(c) 
+        print(f"Carga: {c['tag']} | Potencia: {c['potencia']} {c['unidad']}")
+        print(f"Resultado Backend: {seccion}")
+        print("-" * 30)
 
 if __name__ == "__main__":
     main()
