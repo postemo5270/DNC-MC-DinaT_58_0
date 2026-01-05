@@ -47,15 +47,32 @@ drop_padre = widgets.Dropdown(options=["NINGUNO (PRINCIPAL)"], description="Alim
 btn_tbt_ok = widgets.Button(description="CREAR TABLERO", button_style='success', layout=style_full)
 
 def mostrar_crear_tbt():
+    # 1. Revisamos qué tableros existen en memoria
     nombres = [t.nombre for t in backend.MEMORIA_TABLEROS]
+    es_primero = len(nombres) == 0
+    
+    # Preparamos el dropdown (siempre debe tener opciones válidas internamente)
     drop_padre.options = ["NINGUNO (PRINCIPAL)"] + nombres
+    drop_padre.value = "NINGUNO (PRINCIPAL)" # Reset por seguridad
     txt_tbt_nom.value = ""
     
     with out_main:
         clear_output()
-        display(widgets.HTML("<h3>⚡ DEFINICIÓN DE TABLERO</h3>"))
-        display(widgets.HBox([num_voltaje, num_fases]))
-        display(widgets.VBox([txt_tbt_nom, drop_padre, btn_tbt_ok]))
+        
+        if es_primero:
+            # CASO A: PRIMER TABLERO (Se oculta el selector de Padre)
+            display(widgets.HTML("<h3 style='color:#2c3e50'>⚡ DEFINICIÓN TABLERO PRINCIPAL (ACOMETIDA)</h3>"))
+            display(widgets.HTML("<i style='color:gray; font-size:0.9em'>Este será el origen de energía del sistema.</i>"))
+            display(widgets.HBox([num_voltaje, num_fases]))
+            # Solo mostramos Nombre y Botón. El 'drop_padre' queda oculto pero vale "NINGUNO"
+            display(widgets.VBox([txt_tbt_nom, btn_tbt_ok])) 
+            
+        else:
+            # CASO B: SIGUIENTES TABLEROS (Se muestra selector para posible Subtablero)
+            display(widgets.HTML("<h3 style='color:#2980b9'>⚡ AGREGAR NUEVO TABLERO O SUB-TABLERO</h3>"))
+            display(widgets.HBox([num_voltaje, num_fases]))
+            # Aquí SÍ mostramos el drop_padre para que el usuario decida
+            display(widgets.VBox([txt_tbt_nom, drop_padre, btn_tbt_ok]))
 
 def on_tbt_save(b):
     if not txt_tbt_nom.value: return
