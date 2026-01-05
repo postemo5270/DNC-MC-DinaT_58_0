@@ -1,10 +1,8 @@
-%%writefile IngCargas.py
 import ipywidgets as widgets
 from IPython.display import display, clear_output
 import backend
 
 # --- ESTADO GLOBAL DEL PROYECTO ---
-# Almacena los datos en memoria durante la sesión
 datos_proyecto = {
     "nombre": "",
     "tablero": {},
@@ -139,3 +137,51 @@ def mostrar_config_tablero(out_principal):
         # Layout optimizado
         form = widgets.VBox([
             crear_fila([w_tag, w_desc]),
+            crear_fila([w_tension, w_fases, w_neutro]),
+            widgets.HTML("<br>"),
+            btn_crear_tablero
+        ])
+        
+        display(form)
+
+        def on_crear_tablero(b):
+            if not w_tag.value:
+                print("⚠️ Falta el Tag del tablero")
+                return
+            
+            datos_proyecto['tablero'] = {
+                "tag": w_tag.value,
+                "descripcion": w_desc.value,
+                "tension": w_tension.value,
+                "fases": w_fases.value,
+                "neutro": w_neutro.value
+            }
+            mostrar_formulario_cargas(out_principal)
+
+        btn_crear_tablero.on_click(on_crear_tablero)
+
+# --- PANTALLA 1: INICIO DE PROYECTO ---
+def main():
+    # Area de Salida Principal (Contenedor dinámico)
+    out_principal = widgets.Output()
+    display(out_principal)
+    
+    with out_principal:
+        display(crear_titulo("1. Nuevo Proyecto de Ingeniería"))
+        
+        w_nombre_proy = widgets.Text(description="Proyecto:", placeholder="Nombre del proyecto...")
+        btn_inicio = widgets.Button(description="Crear Proyecto", button_style='info')
+        
+        display(widgets.HBox([w_nombre_proy, btn_inicio]))
+
+        def on_inicio(b):
+            if w_nombre_proy.value:
+                datos_proyecto['nombre'] = w_nombre_proy.value
+                mostrar_config_tablero(out_principal)
+            else:
+                print("⚠️ Ingrese un nombre de proyecto")
+
+        btn_inicio.on_click(on_inicio)
+
+if __name__ == "__main__":
+    main()
