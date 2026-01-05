@@ -1,294 +1,174 @@
 import ipywidgets as widgets
 from IPython.display import display, clear_output
 import backend
-from backend import Circuito, Tablero
+import importlib
+
+# Recargamos backend para asegurar que las tablas estén frescas
+importlib.reload(backend)
 
 # =============================================================================
-# GESTIÓN DE ESTADO DE SESIÓN
+# WIDGETS GLOBALES (DEFINICIÓN VISUAL)
 # =============================================================================
-sesion = { 
-    "tbt_actual": None, 
-    "padres_disponibles": [] 
-}
+style_input = widgets.Layout(width='98%')
+style_label = widgets.Layout(width='98%', font_weight='bold')
 
-# Estilos de Layout para simular formulario profesional
-style_full = widgets.Layout(width='98%', margin='2px 0')
-style_half = widgets.Layout(width='48%', margin='2px')
-style_third = widgets.Layout(width='32%', margin='2px')
-out_main = widgets.Output()
+# --- WIDGETS DE CONFIGURACIÓN INICIAL (TABLERO) ---
+dd_voltaje = widgets.Dropdown(options=[208, 220, 440, 460, 480], value=480, description="Voltaje (V):", layout=style_input)
+dd_fases = widgets.Dropdown(options=[1, 3], value=3, description="Fases:", layout=style_input)
+btn_crear_tbt = widgets.Button(description="INICIAR PROYECTO", button_style='primary', layout=style_input)
 
-# =============================================================================
-# 1. PANTALLA INICIO
-# =============================================================================
-txt_proy = widgets.Text(description="Proyecto:", placeholder="Nombre del Proyecto", layout=style_full)
-btn_start = widgets.Button(description="INICIAR PROYECTO", button_style='primary', layout=style_full)
-
-def mostrar_inicio():
-    # 1. Limpiamos campos por si acaso se reinicia el proyecto
-    txt_proy.value = "" 
-    
-    # 2. Construimos la interfaz en una lista ordenada
-    items_inicio = [
-        widgets.HTML("<h3 style='color:#2980b9; border-bottom: 2px solid #2980b9; padding-bottom:10px'>📂 GESTIÓN DE PROYECTO ELÉCTRICO</h3>"),
-        widgets.HTML("<p>Ingrese el nombre del proyecto para comenzar la memoria de cálculo.</p>"),
-        txt_proy,
-        widgets.HTML("<br>"), # Espaciador
-        btn_start
-    ]
-    
-    # 3. Empaquetamos todo en un contenedor vertical (VBox)
-    contenedor_inicio = widgets.VBox(items_inicio)
-
-    # 4. Renderizamos una sola vez
-    with out_main:
-        clear_output(wait=True)
-        display(contenedor_inicio)
-
-def on_start(b):
-    if not txt_proy.value: return
-    # Reinicio limpio de memoria
-    backend.MEMORIA_TABLEROS = []
-    mostrar_crear_tbt()
-
-btn_start.on_click(on_start)
-
-# =============================================================================
-# 2. PANTALLA CREAR TABLERO
-# =============================================================================
-txt_tbt_nom = widgets.Text(description="Nombre:", placeholder="Ej: Tablero Principal 1", layout=style_full)
-num_voltaje = widgets.Dropdown(options=[208, 220, 480, 4160, 13200], description="Voltaje (V):", value=480, layout=style_half)
-num_fases = widgets.Dropdown(options=[1, 2, 3], description="Fases:", value=3, layout=style_half)
-drop_padre = widgets.Dropdown(options=["NINGUNO (PRINCIPAL)"], description="Alimentador:", layout=style_full)
-btn_tbt_ok = widgets.Button(description="CREAR TABLERO", button_style='success', layout=style_full)
-
-def mostrar_crear_tbt():
-    # 1. Analisis de estado (Principal vs Sub)
-    nombres = [t.nombre for t in backend.MEMORIA_TABLEROS]
-    es_primero = len(nombres) == 0
-    
-    # 2. Configuración de opciones del dropdown (aunque se oculte)
-    drop_padre.options = ["NINGUNO (PRINCIPAL)"] + nombres
-    drop_padre.value = "NINGUNO (PRINCIPAL)"
-    txt_tbt_nom.value = ""
-    
-    # 3. Construcción visual usando una LISTA de widgets
-    # Esto evita que se duplique o se desordene al renderizar
-    items_visuales = []
-    
-    if es_primero:
-        # Encabezado Principal
-        items_visuales.append(widgets.HTML("<h3 style='color:#2c3e50; border-bottom: 2px solid #2c3e50; padding-bottom:5px'>⚡ DEFINICIÓN TABLERO PRINCIPAL (ACOMETIDA)</h3>"))
-        items_visuales.append(widgets.HTML("<div style='margin-bottom: 10px; color:gray'><i>Este será el origen de energía del sistema. No requiere seleccionar alimentador.</i></div>"))
-    else:
-        # Encabezado Subtablero
-        items_visuales.append(widgets.HTML("<h3 style='color:#2980b9; border-bottom: 2px solid #2980b9; padding-bottom:5px'>⚡ AGREGAR NUEVO TABLERO O SUB-TABLERO</h3>"))
-    
-    # Fila de Voltaje y Fases (Siempre visible)
-    items_visuales.append(widgets.HBox([num_voltaje, num_fases], layout=widgets.Layout(margin='10px 0')))
-    
-    # Nombre del Tablero
-    items_visuales.append(txt_tbt_nom)
-    
-    # Selector de Padre (Solo se agrega a la lista visual si NO es el primero)
-    if not es_primero:
-        items_visuales.append(drop_padre)
-        
-    # Botón de Acción
-    items_visuales.append(widgets.HTML("<br>"))
-    items_visuales.append(btn_tbt_ok)
-    
-    # 4. Renderizado Limpio en UN SOLO BLOQUE
-    contenedor_total = widgets.VBox(items_visuales)
-    
-    with out_main:
-        clear_output(wait=True) # Borra todo rastro anterior inmediatamente
-        display(contenedor_total)
-
-def on_tbt_save(b):
-    if not txt_tbt_nom.value: return
-    
-    nuevo_tbt = Tablero(nombre=txt_tbt_nom.value, voltaje=num_voltaje.value, fases=num_fases.value)
-    
-    padre_sel = drop_padre.value
-    if padre_sel != "NINGUNO (PRINCIPAL)":
-        nuevo_tbt.padre = padre_sel
-        # ... resto del código ...
-    
-    backend.MEMORIA_TABLEROS.append(nuevo_tbt)
-    sesion["tbt_actual"] = nuevo_tbt
-    mostrar_cargas()
-
-btn_tbt_ok.on_click(on_tbt_save)
-
-# =============================================================================
-# 3. PANTALLA INGRESO DE CARGAS (CORREGIDO PARA VISUALIZACIÓN)
-# =============================================================================
-
-# --- Definición de Widgets (Se mantienen igual, solo ajustamos estilos) ---
-style_input = widgets.Layout(width='95%') # Ancho seguro para evitar desbordes
-
+# --- WIDGETS DE CARGAS (FORMULARIO) ---
 # Identificación
-txt_tag = widgets.Text(description="Tag:", placeholder="C-101", layout=style_input)
-txt_desc = widgets.Text(description="Desc:", placeholder="Motor Bomba", layout=style_input)
+txt_tag = widgets.Text(description="Tag:", placeholder="", layout=style_input)
+txt_desc = widgets.Text(description="Desc:", placeholder="", layout=style_input)
 
 # Potencia
 num_p = widgets.FloatText(description="Potencia:", layout=style_input)
-drop_unit = widgets.Dropdown(options=["kW", "hp", "kVA"], value="kW", layout=style_input)
+dd_unit = widgets.Dropdown(options=["kW", "hp", "kVA"], value="kW", layout=style_input)
 num_fp = widgets.FloatText(description="F.P.:", value=0.9, step=0.01, layout=style_input)
 num_eff = widgets.FloatText(description="Eff:", value=1.0, step=0.01, layout=style_input)
 
-# Configuración Física
+# Físico / Cable
 num_len = widgets.FloatText(description="Long (m):", value=10.0, layout=style_input)
 num_temp = widgets.IntText(description="T.Amb (°C):", value=30, layout=style_input)
-drop_inst = widgets.Dropdown(options=["BD-Sub", "BD-Vista", "Bandeja", "Red aérea"], description="Instalación:", value="BD-Sub", layout=style_input)
+dd_inst = widgets.Dropdown(options=["Bandeja", "Ducto", "Directamente Enterrado"], description="Inst.:", value="Bandeja", layout=style_input)
+dd_mat = widgets.Dropdown(options=["Cobre", "Aluminio"], description="Material:", value="Cobre", layout=style_input)
+dd_aisl = widgets.Dropdown(options=["THHN", "THWN-2", "XHHW-2"], description="Aisl.:", value="THHN", layout=style_input)
+dd_temp_cable = widgets.Dropdown(options=[60, 75, 90], description="T.Cable:", value=90, layout=style_input)
+dd_neutro = widgets.Dropdown(options=["NO", "SI"], description="Neutro:", value="NO", layout=style_input)
 
-# Cable
-drop_mat = widgets.Dropdown(options=["Cobre", "Aluminio"], description="Material:", value="Cobre", layout=style_input)
-drop_aisl = widgets.Dropdown(options=["THHN", "THWN-2", "XHHW-2", "TW", "THW"], description="Aisl:", value="THHN", layout=style_input)
-drop_temp_aisl = widgets.Dropdown(options=[60, 75, 90], description="T.Cable(°C):", value=90, layout=style_input)
-drop_neutro = widgets.Dropdown(options=["NO", "SI"], description="Req. Neutro:", value="NO", layout=style_input)
+# Botones de Acción
+btn_add = widgets.Button(description="CALCULAR Y GUARDAR CARGA", button_style='success', layout=style_input)
+btn_finish = widgets.Button(description="FINALIZAR EDICIÓN", button_style='warning', layout=style_input)
 
-# Botones (Colores brillantes para destacar)
-btn_add = widgets.Button(description="CALCULAR Y AGREGAR CARGA", button_style='info', layout=widgets.Layout(width='98%', margin='5px 0'))
-btn_fin = widgets.Button(description="FINALIZAR EDICIÓN TABLERO", button_style='warning', layout=widgets.Layout(width='98%', margin='5px 0'))
+# Salidas
+out_main = widgets.Output() # Contenedor principal
+out_msg = widgets.Output()  # Mensajes de éxito/error
 
-out_log = widgets.Output() # Aquí saldrán los mensajes de "Agregado correctamente"
+# =============================================================================
+# LÓGICA DE CONTROL
+# =============================================================================
 
-def mostrar_cargas():
-    tbt = sesion["tbt_actual"]
+def iniciar_interfaz():
+    """Punto de entrada: Muestra configuración inicial del tablero único."""
+    # 1. Limpiamos la memoria anterior para empezar limpio
+    backend.MEMORIA_TABLEROS = [] 
     
-    # Construimos la interfaz en BLOQUES (Rows) para asegurar orden
-    row_1 = widgets.HBox([txt_tag, txt_desc])
-    row_2 = widgets.HBox([num_p, drop_unit, num_fp])
-    row_3 = widgets.HBox([num_eff, num_temp])
-    row_4 = widgets.HBox([num_len, drop_inst])
-    row_5 = widgets.HBox([drop_mat, drop_aisl, drop_temp_aisl])
-    row_6 = widgets.HBox([drop_neutro])
+    # 2. Pantalla de Configuración
+    header = widgets.HTML("<h3 style='color:#2c3e50; border-bottom:2px solid #2c3e50'>⚡ NUEVO PROYECTO (Tablero Único)</h3>")
     
-    # Contenedor principal del formulario
-    form_container = widgets.VBox([
-        widgets.HTML(f"<h3 style='border-bottom:2px solid #ddd; padding-bottom:5px;'>📝 EDITANDO: <b style='color:#d35400'>{tbt.nombre}</b> ({tbt.voltaje}V - {tbt.fases}F)</h3>"),
-        widgets.HTML("<b>1. Identificación y Potencia</b>"),
-        row_1, row_2, row_3,
-        widgets.HTML("<b>2. Configuración Física y Cable</b>"),
-        row_4, row_5, row_6,
-        widgets.HTML("<hr>"),
-        btn_add, 
-        out_log, # El log va ANTES del botón de finalizar para que se vea la confirmación
+    container = widgets.VBox([
+        header,
+        widgets.HTML("Configura el nivel de tensión del tablero principal:"),
+        dd_voltaje,
+        dd_fases,
         widgets.HTML("<br>"),
-        btn_fin
+        btn_crear_tbt
     ])
-
+    
     with out_main:
-        clear_output(wait=True) # IMPORTANTE: Borra lo anterior antes de pintar
-        display(form_container)
+        clear_output(wait=True)
+        display(container)
 
-def on_add(b):
-    if num_p.value <= 0: return
-    t = sesion["tbt_actual"]
+def crear_tablero(b):
+    """Crea el objeto Tablero en backend y muestra el formulario de cargas."""
+    # 1. Crear Objeto en Backend
+    t = backend.Tablero("Tablero Principal", dd_voltaje.value, dd_fases.value)
+    backend.MEMORIA_TABLEROS.append(t)
+    
+    # 2. Renderizar Formulario de Cargas
+    mostrar_formulario_cargas(t)
+
+def mostrar_formulario_cargas(t):
+    """Construye la interfaz de ingreso de cargas."""
+    
+    # Estructura visual en filas (HBox) para orden
+    row1 = widgets.HBox([txt_tag, txt_desc])
+    row2 = widgets.HBox([num_p, dd_unit, num_fp])
+    row3 = widgets.HBox([num_len, dd_inst])
+    row4 = widgets.HBox([dd_mat, dd_aisl, dd_temp_cable])
+    
+    form = widgets.VBox([
+        widgets.HTML(f"<h3 style='color:#d35400'>📝 Editando: {t.nombre} ({t.voltaje}V)</h3>"),
+        widgets.HTML("<b>1. Datos de Carga</b>"),
+        row1, row2,
+        widgets.HTML("<b>2. Configuración Física</b>"),
+        row3, row4,
+        widgets.HTML("<hr>"),
+        btn_add,
+        out_msg, # Aquí saldrán los mensajes verdes
+        widgets.HTML("<br>"),
+        btn_finish
+    ])
+    
+    with out_main:
+        clear_output(wait=True)
+        display(form)
+
+def agregar_carga(b):
+    """Calcula, guarda y limpia."""
+    if num_p.value <= 0:
+        with out_msg: 
+            clear_output()
+            display(widgets.HTML("<b style='color:red'>⚠️ La potencia debe ser mayor a 0</b>"))
+        return
+
+    # Obtenemos el único tablero disponible
+    t = backend.MEMORIA_TABLEROS[0]
     
     try:
-        # Instanciación usando Backend
-        nc = Circuito(
-            tag=txt_tag.value, 
-            descripcion=txt_desc.value,
-            p_input=num_p.value, 
-            unidad=drop_unit.value,
-            tension=t.voltaje, 
-            fases=t.fases,
-            fp=num_fp.value,
-            eff=num_eff.value,
+        # 1. Instanciar Circuito (Usando tu clase de Backend)
+        c = backend.Circuito(
+            tag=txt_tag.value, descripcion=txt_desc.value,
+            p_input=num_p.value, unidad=dd_unit.value,
+            tension=t.voltaje, fases=t.fases,
+            fp=num_fp.value, eff=num_eff.value,
             longitud=num_len.value,
-            mat="CU" if drop_mat.value == "Cobre" else "AL",
-            tipo_aislam=drop_aisl.value,
-            t_aislamiento_cable=drop_temp_aisl.value,
-            tipo_instalacion=drop_inst.value,
-            req_neutro=drop_neutro.value,
+            mat="CU" if dd_mat.value == "Cobre" else "AL",
+            tipo_aislam=dd_aisl.value, t_aislamiento_cable=dd_temp_cable.value,
+            tipo_instalacion=dd_inst.value, req_neutro=dd_neutro.value,
             t_ambiente=num_temp.value
         )
         
-        # Cálculo
-        res = nc.ejecutar_calculo()
+        # 2. Calcular
+        res = c.ejecutar_calculo()
         
-        # Guardar en memoria
-        t.agregar_c(nc)
+        # 3. Guardar en Backend
+        t.agregar_c(c)
         
-        # Feedback Visual: Mensaje de éxito claro
-        color = "green" if res['Estado_Cumplimiento'] == "OK" else "red"
-        msg = f"<div style='padding:10px; background-color:#e8f5e9; border-left: 5px solid {color}; margin-bottom: 10px;'>" \
-              f"<b>✅ Carga {nc.tag} Guardada.</b><br>" \
-              f"<small>Cable: {res['Config_Fase']} + {res['Calibre_Tierra']}(GND) | Reg: {res['Reg_Porc']:.2f}%</small><br>" \
-              f"<i>Puede ingresar la siguiente carga ahora.</i></div>"
-        
-        with out_log:
+        # 4. Feedback Visual (Mensaje Verde)
+        msg_html = f"""
+        <div style='background-color:#d4edda; color:#155724; padding:10px; border-radius:5px; border:1px solid #c3e6cb'>
+            <b>✅ Carga '{c.tag}' Agregada Correctamente</b><br>
+            <small>Breaker: {res['I_Proteccion']}A | Cable: {res['Config_Fase']} | Reg: {res['Reg_Porc']:.2f}%</small>
+        </div>
+        """
+        with out_msg:
             clear_output(wait=True)
-            display(widgets.HTML(msg))
+            display(widgets.HTML(msg_html))
             
-        # === LIMPIEZA INTELIGENTE ===
-        # Borramos solo lo que cambia entre carga y carga
+        # 5. Limpiar campos para la siguiente carga
         txt_tag.value = ""
         txt_desc.value = ""
-        num_p.value = 0.0 
-        # NOTA: No borramos Material ni Aislamiento para agilizar la carga masiva
-
+        num_p.value = 0.0
+        # Ponemos el foco visualmente (mentalmente) en el Tag de nuevo
+        
     except Exception as e:
-        with out_log:
-            display(widgets.HTML(f"❌ <b>Error:</b> {str(e)}"))
+        with out_msg:
+            display(widgets.HTML(f"<b style='color:red'>Error Crítico: {str(e)}</b>"))
 
-def on_fin(b):
-    # Lógica de cierre y conexión Top-Down
-    tbt_actual = sesion["tbt_actual"]
-    
-    if tbt_actual and tbt_actual.padre:
-        padre_obj = next((t for t in backend.MEMORIA_TABLEROS if t.nombre == tbt_actual.padre), None)
-        if padre_obj:
-            try:
-                carga_subtablero = tbt_actual.exportar_como_circuito()
-                padre_obj.agregar_c(carga_subtablero)
-                with out_log:
-                     display(widgets.HTML(f"<div style='color:green'><b>🔄 VINCULADO AL PADRE:</b> {padre_obj.nombre}</div>"))
-            except Exception as e:
-                with out_log: display(widgets.HTML(f"Error vinculando: {e}"))
-    
-    mostrar_decision()
-
-btn_add.on_click(on_add)
-btn_fin.on_click(on_fin)
-
-# =============================================================================
-# 4. FLUJO FINAL (SELECCIÓN DE SIGUIENTE PASO)
-# =============================================================================
-
-# Definimos los botones de navegación final
-btn_new_tbt = widgets.Button(description="CREAR OTRO TABLERO", button_style='primary', layout=widgets.Layout(width='98%', margin='5px 0'))
-btn_end_all = widgets.Button(description="VER REPORTE FINAL", button_style='danger', layout=widgets.Layout(width='98%', margin='5px 0'))
-
-def mostrar_decision():
-    """
-    Pantalla intermedia que pregunta si seguir creando tableros o terminar.
-    """
-    items_decision = [
-        widgets.HTML("<h3 style='color:#27ae60; text-align:center'>✅ Tablero Guardado Correctamente</h3>"),
-        widgets.HTML("<p style='text-align:center'>El tablero y sus cargas han sido registrados en la memoria.<br>¿Qué desea hacer ahora?</p>"),
-        widgets.HTML("<hr>"),
-        btn_new_tbt,
-        btn_end_all
-    ]
-    
-    contenedor_decision = widgets.VBox(items_decision, layout=widgets.Layout(align_items='center'))
-
+def finalizar(b):
+    """Cierra la edición."""
     with out_main:
         clear_output(wait=True)
-        display(contenedor_decision)
+        display(widgets.HTML("""
+            <h3 style='color:green'>✅ Edición Finalizada</h3>
+            <p>Los datos han sido guardados en la memoria.</p>
+            <hr>
+            <p>👉 <b>Ejecuta ahora el módulo ModConds.py</b> para ver la tabla de resultados y el resumen de carga.</p>
+        """))
 
-# Conectamos los botones a sus acciones
-btn_new_tbt.on_click(lambda b: mostrar_crear_tbt())
-btn_end_all.on_click(lambda b: display(widgets.HTML("<h3>🚀 SISTEMA CONFIGURADO. Ejecute la celda de Reporte (ModConds).</h3>")))
-
-# =============================================================================
-# 5. PUNTO DE ENTRADA
-# =============================================================================
-def iniciar_interfaz():
-    display(out_main)
-    mostrar_inicio()
-
+# --- CONEXIÓN DE EVENTOS ---
+btn_crear_tbt.on_click(crear_tablero)
+btn_add.on_click(agregar_carga)
+btn_finish.on_click(finalizar)
