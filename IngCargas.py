@@ -255,8 +255,40 @@ def on_fin(b):
 btn_add.on_click(on_add)
 btn_fin.on_click(on_fin)
 
-# === AGREGAR ESTO AL FINAL DE IngCargas.py ===
+# =============================================================================
+# 4. FLUJO FINAL (SELECCIÓN DE SIGUIENTE PASO)
+# =============================================================================
 
+# Definimos los botones de navegación final
+btn_new_tbt = widgets.Button(description="CREAR OTRO TABLERO", button_style='primary', layout=widgets.Layout(width='98%', margin='5px 0'))
+btn_end_all = widgets.Button(description="VER REPORTE FINAL", button_style='danger', layout=widgets.Layout(width='98%', margin='5px 0'))
+
+def mostrar_decision():
+    """
+    Pantalla intermedia que pregunta si seguir creando tableros o terminar.
+    """
+    items_decision = [
+        widgets.HTML("<h3 style='color:#27ae60; text-align:center'>✅ Tablero Guardado Correctamente</h3>"),
+        widgets.HTML("<p style='text-align:center'>El tablero y sus cargas han sido registrados en la memoria.<br>¿Qué desea hacer ahora?</p>"),
+        widgets.HTML("<hr>"),
+        btn_new_tbt,
+        btn_end_all
+    ]
+    
+    contenedor_decision = widgets.VBox(items_decision, layout=widgets.Layout(align_items='center'))
+
+    with out_main:
+        clear_output(wait=True)
+        display(contenedor_decision)
+
+# Conectamos los botones a sus acciones
+btn_new_tbt.on_click(lambda b: mostrar_crear_tbt())
+btn_end_all.on_click(lambda b: display(widgets.HTML("<h3>🚀 SISTEMA CONFIGURADO. Ejecute la celda de Reporte (ModConds).</h3>")))
+
+# =============================================================================
+# 5. PUNTO DE ENTRADA
+# =============================================================================
 def iniciar_interfaz():
     display(out_main)
     mostrar_inicio()
+
