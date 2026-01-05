@@ -4,53 +4,45 @@ import importlib
 import ipywidgets as widgets
 from IPython.display import display
 
-def generar_reporte_final(proyecto):
-    """Esta función es la que hace los cálculos y muestra el reporte"""
-    if not proyecto['cargas']:
-        print("\n⚠️ No hay cargas para procesar.")
-        return
-
-    print("\n" + "="*60)
-    print(f"REPORTE TÉCNICO DE INGENIERÍA: {proyecto['nombre'].upper()}")
-    print(f"TABLERO: {proyecto['tablero'].get('tag')} | {proyecto['tablero'].get('tension')}V")
-    print("="*60)
-
-    for c in proyecto['cargas']:
-        # Aquí llamas a tu backend real
-        # Ejemplo: corriente = backend.calcular_corriente(c)
-        print(f"\n[TAG: {c['tag']}]")
-        print(f"Potencia: {c['potencia']} {c['unidad']} | Inst: {c['tipo_inst']}")
-        print(f"Longitud: {c['longitud']}m | Ducto: {c['mat_ducto']}")
-        print("-" * 40)
-    
-    print("\n>>> FIN DEL REPORTE <<<")
-
 def main():
+    # Recargamos para asegurar que el diccionario global esté limpio al inicio
     importlib.reload(backend)
     importlib.reload(IngCargas)
     
-    # 1. Lanza la interfaz y captura los datos
-    proyecto = IngCargas.main()
+    # 1. Lanzamos la interfaz de ingreso
+    # No necesitamos el botón "Crear" extra de ModConds, usamos el de IngCargas
+    IngCargas.main()
     
-    # 2. Creamos un botón exclusivo en ModConds para generar el reporte
-    # Esto evita que el código siga de largo sin esperar a que llenes los datos
+    # 2. Botón de Reporte vinculado al estado real de IngCargas
     btn_reporte = widgets.Button(
-        description="GENERAR REPORTE", 
+        description="GENERAR REPORTE FINAL", 
         button_style='danger', 
-        icon='file-text',
-        layout=widgets.Layout(width='300px', height='50px', margin='20px 0px')
+        icon='calculator',
+        layout=widgets.Layout(width='300px', height='45px')
     )
     
     output_reporte = widgets.Output()
 
-    def on_click_reporte(b):
+    def al_solicitar_reporte(b):
         with output_reporte:
             output_reporte.clear_output()
-            generar_reporte_final(proyecto)
+            # EXTRAEMOS LOS DATOS DIRECTAMENTE DEL MÓDULO ACTUALIZADO
+            proyecto_real = IngCargas.datos_proyecto 
+            
+            if not proyecto_real['cargas']:
+                print("⚠️ Error: Aún no has guardado ninguna carga en la interfaz superior.")
+                return
 
-    btn_reporte.on_click(on_click_reporte)
-    
-    # Mostramos el botón debajo de la interfaz de IngCargas
+            print(f"\nGenerando reporte para: {proyecto_real['nombre']}")
+            print("="*50)
+            for carga in proyecto_real['cargas']:
+                # Aquí el backend hace su magia
+                print(f"-> Procesando Carga: {carga['tag']}...")
+                # resultado = backend.procesar(carga)
+            print("="*50)
+            print("✅ Reporte Generado con éxito.")
+
+    btn_reporte.on_click(al_solicitar_reporte)
     display(btn_reporte, output_reporte)
 
 if __name__ == "__main__":
