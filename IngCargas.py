@@ -91,60 +91,74 @@ def on_tbt_save(b):
 btn_tbt_ok.on_click(on_tbt_save)
 
 # =============================================================================
-# 3. PANTALLA INGRESO DE CARGAS (VARIABLES.XLSX)
+# 3. PANTALLA INGRESO DE CARGAS (CORREGIDO PARA VISUALIZACIÓN)
 # =============================================================================
+
+# --- Definición de Widgets (Se mantienen igual, solo ajustamos estilos) ---
+style_input = widgets.Layout(width='95%') # Ancho seguro para evitar desbordes
+
 # Identificación
-txt_tag = widgets.Text(description="Tag:", placeholder="C-101", layout=style_half)
-txt_desc = widgets.Text(description="Desc:", placeholder="Motor Bomba", layout=style_half)
+txt_tag = widgets.Text(description="Tag:", placeholder="C-101", layout=style_input)
+txt_desc = widgets.Text(description="Desc:", placeholder="Motor Bomba", layout=style_input)
 
-# Potencia y Eficiencia
-num_p = widgets.FloatText(description="Potencia:", layout=style_third)
-drop_unit = widgets.Dropdown(options=["kW", "hp", "kVA"], value="kW", layout=style_third)
-num_fp = widgets.FloatText(description="F.P.:", value=0.9, step=0.01, layout=style_third)
-num_eff = widgets.FloatText(description="Eff:", value=1.0, step=0.01, layout=style_third)
+# Potencia
+num_p = widgets.FloatText(description="Potencia:", layout=style_input)
+drop_unit = widgets.Dropdown(options=["kW", "hp", "kVA"], value="kW", layout=style_input)
+num_fp = widgets.FloatText(description="F.P.:", value=0.9, step=0.01, layout=style_input)
+num_eff = widgets.FloatText(description="Eff:", value=1.0, step=0.01, layout=style_input)
 
-# Instalación y Ambiente
-num_len = widgets.FloatText(description="Long (m):", value=10.0, layout=style_third)
-num_temp = widgets.IntText(description="T.Amb (°C):", value=30, layout=style_third)
-drop_inst = widgets.Dropdown(options=["BD-Sub", "BD-Vista", "Bandeja", "Red aérea"], description="Instalación:", value="BD-Sub", layout=style_full)
+# Configuración Física
+num_len = widgets.FloatText(description="Long (m):", value=10.0, layout=style_input)
+num_temp = widgets.IntText(description="T.Amb (°C):", value=30, layout=style_input)
+drop_inst = widgets.Dropdown(options=["BD-Sub", "BD-Vista", "Bandeja", "Red aérea"], description="Instalación:", value="BD-Sub", layout=style_input)
 
-# Configuración Cable
-drop_mat = widgets.Dropdown(options=["Cobre", "Aluminio"], description="Material:", value="Cobre", layout=style_third)
-drop_aisl = widgets.Dropdown(options=["THHN", "THWN-2", "XHHW-2", "TW", "THW"], description="Aisl:", value="THHN", layout=style_third)
-drop_temp_aisl = widgets.Dropdown(options=[60, 75, 90], description="T.Cable(°C):", value=90, layout=style_third)
-drop_neutro = widgets.Dropdown(options=["NO", "SI"], description="Req. Neutro:", value="NO", layout=style_third)
+# Cable
+drop_mat = widgets.Dropdown(options=["Cobre", "Aluminio"], description="Material:", value="Cobre", layout=style_input)
+drop_aisl = widgets.Dropdown(options=["THHN", "THWN-2", "XHHW-2", "TW", "THW"], description="Aisl:", value="THHN", layout=style_input)
+drop_temp_aisl = widgets.Dropdown(options=[60, 75, 90], description="T.Cable(°C):", value=90, layout=style_input)
+drop_neutro = widgets.Dropdown(options=["NO", "SI"], description="Req. Neutro:", value="NO", layout=style_input)
 
-btn_add = widgets.Button(description="CALCULAR Y AGREGAR CARGA", button_style='info', layout=style_full)
-btn_fin = widgets.Button(description="FINALIZAR EDICIÓN TABLERO", button_style='warning', layout=style_full)
-out_log = widgets.Output()
+# Botones (Colores brillantes para destacar)
+btn_add = widgets.Button(description="CALCULAR Y AGREGAR CARGA", button_style='info', layout=widgets.Layout(width='98%', margin='5px 0'))
+btn_fin = widgets.Button(description="FINALIZAR EDICIÓN TABLERO", button_style='warning', layout=widgets.Layout(width='98%', margin='5px 0'))
+
+out_log = widgets.Output() # Aquí saldrán los mensajes de "Agregado correctamente"
 
 def mostrar_cargas():
     tbt = sesion["tbt_actual"]
-    with out_main:
-        clear_output()
-        display(widgets.HTML(f"<h3>📝 EDITANDO: <b style='color:#d35400'>{tbt.nombre}</b> ({tbt.voltaje}V - {tbt.fases}F)</h3>"))
-        
-        # Layout Gráfico
-        display(widgets.HTML("<b>1. Identificación y Potencia</b>"))
-        display(widgets.HBox([txt_tag, txt_desc]))
-        display(widgets.HBox([num_p, drop_unit, num_fp]))
-        display(widgets.HBox([num_eff, num_temp]))
-        
-        display(widgets.HTML("<b>2. Configuración Física</b>"))
-        display(widgets.HBox([num_len, drop_inst]))
-        display(widgets.HBox([drop_mat, drop_aisl, drop_temp_aisl]))
-        display(widgets.HBox([drop_neutro]))
+    
+    # Construimos la interfaz en BLOQUES (Rows) para asegurar orden
+    row_1 = widgets.HBox([txt_tag, txt_desc])
+    row_2 = widgets.HBox([num_p, drop_unit, num_fp])
+    row_3 = widgets.HBox([num_eff, num_temp])
+    row_4 = widgets.HBox([num_len, drop_inst])
+    row_5 = widgets.HBox([drop_mat, drop_aisl, drop_temp_aisl])
+    row_6 = widgets.HBox([drop_neutro])
+    
+    # Contenedor principal del formulario
+    form_container = widgets.VBox([
+        widgets.HTML(f"<h3 style='border-bottom:2px solid #ddd; padding-bottom:5px;'>📝 EDITANDO: <b style='color:#d35400'>{tbt.nombre}</b> ({tbt.voltaje}V - {tbt.fases}F)</h3>"),
+        widgets.HTML("<b>1. Identificación y Potencia</b>"),
+        row_1, row_2, row_3,
+        widgets.HTML("<b>2. Configuración Física y Cable</b>"),
+        row_4, row_5, row_6,
+        widgets.HTML("<hr>"),
+        btn_add, 
+        out_log, # El log va ANTES del botón de finalizar para que se vea la confirmación
+        widgets.HTML("<br>"),
+        btn_fin
+    ])
 
-        display(widgets.HTML("<hr>"))
-        display(widgets.VBox([btn_add, btn_fin]))
-        display(out_log)
+    with out_main:
+        clear_output(wait=True) # IMPORTANTE: Borra lo anterior antes de pintar
+        display(form_container)
 
 def on_add(b):
     if num_p.value <= 0: return
     t = sesion["tbt_actual"]
     
     try:
-        # Instanciación usando Variables de MC-ELE-Variables.xlsx
+        # Instanciación usando Backend
         nc = Circuito(
             tag=txt_tag.value, 
             descripcion=txt_desc.value,
@@ -163,20 +177,22 @@ def on_add(b):
             t_ambiente=num_temp.value
         )
         
-        # Cálculo inmediato para feedback
+        # Cálculo
         res = nc.ejecutar_calculo()
         
-        # Guardar solo si no explota
+        # Guardar en memoria
         t.agregar_c(nc)
         
-        # Feedback Visual
+        # Feedback Visual (Sin recargar toda la página)
         color = "green" if res['Estado_Cumplimiento'] == "OK" else "red"
-        msg = f"<b style='color:{color}'>✅ {nc.tag} Agregado:</b> {res['Config_Fase']} + {res['Calibre_Tierra']}(GND) | Reg: {res['Reg_Porc']:.2f}%"
+        msg = f"<div style='padding:5px; background-color:#f8f9fa; border-left: 4px solid {color}'>" \
+              f"<b>✅ {nc.tag} Agregado:</b> {res['Config_Fase']} + {res['Calibre_Tierra']}(GND) | Reg: {res['Reg_Porc']:.2f}%</div>"
         
         with out_log:
+            clear_output(wait=True) # Limpia el mensaje anterior
             display(widgets.HTML(msg))
             
-        # Limpieza de campos clave
+        # Limpieza de campos clave para la siguiente carga
         txt_tag.value = ""
         txt_desc.value = ""
 
@@ -185,35 +201,24 @@ def on_add(b):
             display(widgets.HTML(f"❌ <b>Error:</b> {str(e)}"))
 
 def on_fin(b):
+    # Lógica de cierre y conexión Top-Down
     tbt_actual = sesion["tbt_actual"]
     
-    # === LÓGICA DE INYECCIÓN AUTOMÁTICA EN PADRE ===
     if tbt_actual and tbt_actual.padre:
-        # 1. Buscar el objeto padre en la memoria
         padre_obj = next((t for t in backend.MEMORIA_TABLEROS if t.nombre == tbt_actual.padre), None)
-        
         if padre_obj:
             try:
-                # 2. Convertir el tablero actual en una carga (Circuito)
                 carga_subtablero = tbt_actual.exportar_como_circuito()
-                
-                # 3. Inyectar esa carga en la lista de circuitos del padre
                 padre_obj.agregar_c(carga_subtablero)
-                
-                # Feedback visual de éxito
                 with out_log:
-                    display(widgets.HTML(f"""
-                        <div style='background-color:#d4edda; color:#155724; padding:5px; border: 1px solid #c3e6cb; border-radius:3px; margin-top:5px;'>
-                        <b>🔄 VINCULADO:</b> Subtablero '{tbt_actual.nombre}' inyectado en '{padre_obj.nombre}'.<br>
-                        <i>Carga: {carga_subtablero.p_input:.2f} kW | Breaker: {carga_subtablero.res['I_Proteccion']} A</i>
-                        </div>
-                    """))
+                     display(widgets.HTML(f"<div style='color:green'><b>🔄 VINCULADO AL PADRE:</b> {padre_obj.nombre}</div>"))
             except Exception as e:
-                with out_log:
-                    display(widgets.HTML(f"<b style='color:red'>Error inyectando en padre: {str(e)}</b>"))
-    # ===============================================
-
+                with out_log: display(widgets.HTML(f"Error vinculando: {e}"))
+    
     mostrar_decision()
+
+btn_add.on_click(on_add)
+btn_fin.on_click(on_fin)
 
 # === AGREGAR ESTO AL FINAL DE IngCargas.py ===
 
